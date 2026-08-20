@@ -116,7 +116,7 @@ async function handleOneEvent(event: WebhookEvent): Promise<void> {
       const kw = keywordIntent(text);
       if (kw === "cancel" || kw === "amend") {
         const flowCtx: FlowContext = { key, userId: userId ?? speakerId ?? "", speakerId, isGroup };
-        const reply = await startFlowMessages(kw, flowCtx);
+        const reply = await startFlowMessages(kw, flowCtx, text);
         await client.replyMessage(replyToken!, reply.messages.map((m) => textMessage(m)));
         return;
       }
@@ -145,12 +145,12 @@ async function handleOneEvent(event: WebhookEvent): Promise<void> {
 
       if (intent === "cancel" || intent === "amend") {
         const flowCtx: FlowContext = { key, userId: userId ?? speakerId ?? "", speakerId, isGroup };
-        const reply = await startFlowMessages(intent, flowCtx);
+        const reply = await startFlowMessages(intent, flowCtx, text);
         await client.replyMessage(replyToken!, reply.messages.map((m) => textMessage(m)));
         return;
       }
 
-      if (intent === "product" || intent === "smalltalk") {
+      if (intent === "product" || intent === "smalltalk" || intent === "unknown") {
         const count = conv?.smalltalkCount ?? 0;
         const isSmalltalk = intent === "smalltalk";
         if (isSmalltalk && shouldCloseSmalltalk(count + 1)) {

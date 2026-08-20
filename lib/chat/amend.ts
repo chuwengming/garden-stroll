@@ -22,22 +22,64 @@ export interface FlowReply {
   passthrough?: boolean; // true = 群組他人訊息，交給一般流程
 }
 
-// 起始：列出本人預約供選擇 → 回傳選擇清單
-export async function startFlowMessages(kind: "cancel" | "amend", ctx: FlowContext): Promise<FlowReply> {
-  const bookings = await listOwnBookings(ctx.userId, 5);
+// 從文字中抽取服務項目與日期，做智能匹配
+function matchBooking(bookings: Awaited<ReturnType<typeof listOwnBookings>>, text: string) {
+  // 1. 服務項目匹配
+  const itemHits = bookings.filter((b) => {
+    const label = ITEM_LABELS[b.bookingItem] ?? "";
+    if (label && text.includes(label)) return true;
+    return false;
+  });
+  // 2. 日期匹配（YYYY-MM-DD 或 M/D）
+  const dateMatch = text.match(/(\d{1,2})[\/\-月](\d{1,2})/);
+  if (dateMatch) {
+    const m = dateMatch[1].padStart(2, "0");
+    const d = dateMatch[2].padStart(2, "0");
+    const dateHits = bookings.filter((b) => {
+      const iso = b.bookingDate.toISOString().slice(5, 10); // MM-DD
+      return iso === `${m}-${d}`;
+    });
+    if (dateHits.length > 0) return dateHits;
+  }
+  return itemHits;
+}
+
+// 起始：依文字智能匹配本人預約，供確認
+export async function startFlowMessages(kind: "cancel" | "amend", ctx: FlowContext, text?: string): Promise<FlowReply> {
+  const bookings = await listOwnBookings(ctx.userId, 10);
 
   if (bookings.length === 0) {
     return { messages: ["您目前沒有可取消／更改的預約。"], handled: true };
   }
 
-  const lines = bookings.map((b, i) => `${i + 1}. #${b.id} ${b.bookingDate.toISOString().slice(0, 10)} ${b.bookingSlot} ${ITEM_LABELS[b.bookingItem] ?? b.bookingItem}`);
+  // 智能匹配（使用者提到服務項目或日期）
+  const matched = text ? matchBooking(bookings, text) : [];
+  const targets = matched.length > 0 ? matched : bookings;
+
+  if (targets.length === 1) {
+    // 只有一筆相符 → 直接進入確認
+    const b = targets[0];
+    const label = `#${b.id} ${b.bookingDate.toISOString().slice(0, 10)} ${b.bookingSlot} ${ITEM_LABELS[b.bookingItem] ?? b.bookingItem}`;
+    await setFlow(ctx.key, {
+      kind, step: "confirm", bookingId: b.id,
+      speakerId: ctx.speakerId, createdAt: Date.now(),
+    });
+    return {
+      messages: [`找到您的預約：${label}\n確認要${kind === "cancel" ? "取消" : "更改"}嗎？回「確認」執行，或「不用了」。`],
+      handled: true,
+    };
+  }
+
+  // 多筆 → 列出讓使用者選編號
+  const lines = targets.map((b, i) => `${i + 1}. #${b.id} ${b.bookingDate.toISOString().slice(0, 10)} ${b.bookingSlot} ${ITEM_LABELS[b.bookingItem] ?? b.bookingItem}`);
   await setFlow(ctx.key, {
-    kind, step: "select", bookingId: bookings[0].id,
+    kind, step: "select", bookingId: targets[0].id,
     speakerId: ctx.speakerId, createdAt: Date.now(),
   });
 
+  const hint = matched.length > 0 ? "（已依您提到的服務/日期篩選）" : "";
   return {
-    messages: [`請回覆編號選擇要${kind === "cancel" ? "取消" : "更改"}的預約：\n${lines.join("\n")}\n\n（回「不用了」取消操作）`],
+    messages: [`請回覆編號選擇要${kind === "cancel" ? "取消" : "更改"}的預約：\n${lines.join("\n")}\n\n（回「不用了」取消操作）${hint}`],
     handled: true,
   };
 }
