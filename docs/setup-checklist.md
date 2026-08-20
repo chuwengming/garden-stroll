@@ -17,11 +17,11 @@
 | GitHub | `chuwengming/garden-stroll` |
 | Railway 專案 | Line Reservation |
 | Railway 服務 | `web`（Next.js）、`MySQL` |
-| 公開網域 | `https://{{public_host}}`（Railway 部署後回填） |
-| Webhook URL | `https://{{public_host}}/api/line/webhook` |
-| LIFF Endpoint | `https://{{public_host}}/liff/booking`（路徑以 form-schema `liff_path` 為準） |
-| LIFF ID | （建立 LIFF 後填） |
-| LINE Login Channel ID | （Login Channel Basic settings） |
+| 公開網域 | `https://web-garden-production.up.railway.app` |
+| Webhook URL | `https://web-garden-production.up.railway.app/api/line/webhook` |
+| LIFF Endpoint | `https://web-garden-production.up.railway.app/liff/booking`（路徑以 form-schema `liff_path` 為準） |
+| LIFF ID | `2011182534-zsIUxwdn` |
+| LINE Login Channel ID | `2011182534` |
 
 > 本專案 Intake 已確認：預約系統（booking）、美髮服務、僅週二～週五營業。
 
@@ -100,7 +100,7 @@ Console 沒有「Link LINE account」按鈕，路徑是：右上頭像 → 帳�
 
 改名為「訂購」後 **不需要改任何 LINE Console 設定**：表單路徑刻意保留 `/liff/booking`，只有頁面文字與 API（`/api/orders`）改名。若日後想改成 `/liff/order`，必須同步改 LIFF Endpoint URL，否則會出現 `INVALID_CONFIG`。
 
-開啟方式：使用者端網址為 `https://liff.line.me/2011165611-aEsHcumH`；請用**手機 LINE App** 從聊天室開啟，不要用 IDE 內嵌預覽（iframe 會被拒）。
+開啟方式：使用者端網址為 `https://liff.line.me/2011182534-zsIUxwdn`；請用**手機 LINE App** 從聊天室開啟，不要用 IDE 內嵌預覽（iframe 會被拒）。
 
 ---
 

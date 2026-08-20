@@ -1,11 +1,13 @@
 // lib/line/messages.ts — 訊息與回覆建構
 import type { TextMessage, FlexMessage } from "@line/bot-sdk";
+import { bookingButtonUri } from "./liff-link";
 
 export function textMessage(text: string): TextMessage {
   return { type: "text", text };
 }
 
 export function bookingButtonFlex(): FlexMessage {
+  const uri = bookingButtonUri();
   return {
     type: "flex",
     altText: "花園漫步預約表單",
@@ -42,7 +44,7 @@ export function bookingButtonFlex(): FlexMessage {
             action: {
               type: "uri",
               label: "開啟預約表單",
-              uri: `${process.env.NEXT_PUBLIC_APP_URL ?? ""}/liff/booking`,
+              uri: uri || "https://line.me/R/",
             },
           },
         ],
