@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
 interface BookingFormProps {
   idToken: string;
@@ -25,6 +25,24 @@ const ITEMS = [
   { value: "shampoo", label: "洗髮" },
 ];
 
+const ITEM_LABELS: Record<string, string> = {
+  haircut: "剪髮",
+  perm: "燙髮",
+  color: "染髮",
+  shampoo: "洗髮",
+};
+
+function closeLiffWindow() {
+  const liff = (window as any).liff;
+  if (liff && typeof liff.closeWindow === "function") {
+    try {
+      liff.closeWindow();
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
 export default function BookingForm({ idToken, profileName }: BookingFormProps) {
   const [form, setForm] = useState({
     name: profileName ?? "",
@@ -37,6 +55,9 @@ export default function BookingForm({ idToken, profileName }: BookingFormProps) 
   });
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
+  // submitted：成功後切換到完成畫面（表單消失）
+  const [submitted, setSubmitted] = useState<{ bookingId: number } | null>(null);
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const minDate = useMemo(() => {
     const now = new Date();
@@ -58,13 +79,11 @@ export default function BookingForm({ idToken, profileName }: BookingFormProps) 
 
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    // 清除任何殘留的 custom validity，避免瀏覽器擋住 submit
     const formEl = e.currentTarget;
     formEl.querySelectorAll("input, select, textarea").forEach((el) => {
       if ("setCustomValidity" in el) (el as HTMLInputElement).setCustomValidity("");
     });
 
-    // 日期檢查：非開放日 → 明確錯誤
     if (form.bookingDate && dateDisabled(form.bookingDate)) {
       setResult({ ok: false, message: "僅週二至週五可預約，請重新選擇日期。" });
       return;
@@ -80,8 +99,10 @@ export default function BookingForm({ idToken, profileName }: BookingFormProps) 
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        setResult({ ok: true, message: "✅ 預約已成立！請至 LINE 聊天室查看明細。" });
-        setForm((f) => ({ ...f, bookingSlot: "", bookingItem: "", notes: "" }));
+        // 成功：切換到完成畫面（表單消失），明細已 Push 至 LINE 對話
+        setSubmitted({ bookingId: data?.booking?.id ?? 0 });
+        // 3.5 秒後自動關閉 LIFF 視窗，回到 LINE 對話
+        closeTimer.current = setTimeout(() => closeLiffWindow(), 3500);
       } else {
         setResult({ ok: false, message: data.error ?? `送出失敗（HTTP ${res.status}）` });
       }
@@ -92,6 +113,32 @@ export default function BookingForm({ idToken, profileName }: BookingFormProps) 
     }
   }
 
+  // ===== 完成畫面（表單消失）=====
+  if (submitted) {
+    return (
+      <main style={{ maxWidth: 520, margin: "0 auto", padding: "3rem 1.5rem", textAlign: "center" }}>
+        <div style={{ fontSize: "3rem", marginBottom: "1rem" }}>✅</div>
+        <h1 style={{ color: "#1DB446", fontSize: "1.4rem" }}>預約已成立！</h1>
+        <p style={{ margin: "1rem 0", color: "#555" }}>
+          預約明細已傳送至 LINE 對話，請返回聊天室查看。
+        </p>
+        <button
+          onClick={() => closeLiffWindow()}
+          style={{
+            padding: ".9rem 2rem", background: "#1DB446", color: "#fff",
+            border: "none", borderRadius: 8, fontSize: "1rem", fontWeight: 600,
+          }}
+        >
+          返回 LINE 對話
+        </button>
+        <p style={{ marginTop: "1rem", fontSize: ".85rem", color: "#999" }}>
+          視窗將自動關閉…
+        </p>
+      </main>
+    );
+  }
+
+  // ===== 表單畫面 =====
   return (
     <main style={{ maxWidth: 520, margin: "0 auto", padding: "1.5rem 1rem 4rem" }}>
       <h1 style={{ color: "#1DB446", fontSize: "1.5rem" }}>花園漫步 — 預約表單</h1>
