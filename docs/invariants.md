@@ -2,7 +2,7 @@
 
 > 隨專案演進持續累積。每條應可被人工或 agent 驗證（可檢查、可回歸）。
 > 本檔由 `line-bot-custom-service` skill 的模板建立；維護規則見同目錄 `living-invariants` 說明（或 Cursor living-invariants rule）。
-> 最後更新：2026-08-21
+> 最後更新：2026-08-21（Phase 4 完成：管理查庫、取消/更改流程）
 
 > **參數**：以專案 `docs/form-schema.yaml` 與 Intake 為準。本專案 **terminology = booking（預約）**。
 
@@ -22,9 +22,11 @@
 - [ ] 雙入口：1:1 回覆目標為 userId；群組為 groupId。每筆紀錄綁 `line_user_id`，無「目前使用者」全域變數。
 - [ ] LIFF 送出後端須驗證 LINE ID Token，不得信任表單自填 userId。
 - [ ] AI 不可用時退回關鍵字啟發式，不得完全不回覆；訂購／預約與表單不受影響。
-- [ ] 對話狀態以對話為單位（userId／groupId／roomId）。群組取消／改單 `flow_json` 必須含 `speakerId`；非主人不得當成選號或清掉主人流程。
-- [ ] 「我的ID」只在 1:1 回傳 userId。
-- [ ] 管理員查庫僅 1:1 且 userId ∈ `ADMIN_LINE_USER_IDS`；不得任意 SQL，只允許固定 Prisma 查詢工具。
+- [x] 對話狀態以對話為單位（userId／groupId／roomId）。群組取消／改單 `flow_json` 必須含 `speakerId`；非主人不得當成選號或清掉主人流程。
+- [x] 「我的ID」只在 1:1 回傳 userId。
+- [x] 管理員查庫僅 1:1 且 userId ∈ `ADMIN_LINE_USER_IDS`；不得任意 SQL，只允許固定 Prisma 查詢工具。
+- [x] 「我的預約／查預約」列出本人預約；取消／更改優先於開表單。
+- [x] 冷靜期內仍處理 cancel/amend 與管理員查庫。
 
 ## 3. 環境與銜接
 
