@@ -1,0 +1,103 @@
+# terminology: order | booking
+# Copy to docs/form-schema.yaml and edit before Phase 2.
+# Changing fields requires syncing: Prisma, validate, LIFF form, docs/faq.md, docs/invariants.md.
+
+terminology: booking
+form_noun: "預約表單"
+record_noun: "預約"
+table_name: bookings
+api_path: /api/bookings
+liff_path: /liff/booking
+status_on_create: confirmed
+
+trigger_keywords:
+  - 預約
+  - 我要預約
+  - 預約服務
+
+cancel_keywords:
+  - 取消預約
+  - 取消
+
+amend_keywords:
+  - 更改預約
+  - 修改預約
+
+query_keywords:
+  - 我的預約
+  - 查預約
+
+fields:
+  - key: name
+    label: 姓名
+    type: text
+    required: true
+  - key: phone
+    label: 電話
+    type: phone
+    required: true
+  - key: booking_date
+    label: 預約日期
+    type: date
+    required: true
+    validation: today_or_later_taipei
+  - key: booking_slot
+    label: 時段
+    type: select
+    required: true
+    options:
+      - value: "09:00"
+        label: "上午 9:00"
+      - value: "10:00"
+        label: "上午 10:00"
+      - value: "11:00"
+        label: "上午 11:00"
+      - value: "12:00"
+        label: "上午 12:00"
+      - value: "13:00"
+        label: "下午 13:00"
+      - value: "14:00"
+        label: "下午 14:00"
+      - value: "15:00"
+        label: "下午 15:00"
+      - value: "16:00"
+        label: "下午 16:00"
+  - key: booking_item
+    label: 服務項目
+    type: select
+    required: true
+    options:
+      - value: haircut
+        label: 剪髮
+      - value: perm
+        label: 燙髮
+      - value: color
+        label: 染髮
+      - value: shampoo
+        label: 洗髮
+  - key: people
+    label: 人數
+    type: int
+    required: true
+    min: 1
+    max: 10
+  - key: notes
+    label: 備註
+    type: textarea
+    required: false
+
+create_rules:
+  - "name, phone, booking_date, booking_slot, booking_item, people 必填"
+  - "預約日期不得早於今天（台北時區）"
+  - "僅週二至週五可預約"
+  - "備註選填，缺備註不得拒絕成立"
+
+available_weekdays:
+  - Tue
+  - Wed
+  - Thu
+  - Fri
+
+form_banner: "花園漫步美髮預約：僅週二～週五營業，請選擇日期與時段"
+
+pricing: null

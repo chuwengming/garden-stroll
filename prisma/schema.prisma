@@ -1,0 +1,75 @@
+// Prisma schema — Garden Stroll LINE 預約系統
+// 依 docs/form-schema.yaml（terminology: booking）與 docs/invariants.md
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model ProcessedEvent {
+  id               Int      @id @default(autoincrement())
+  webhookEventId   String   @unique
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  @@index([createdAt])
+  @@map("processed_events")
+}
+
+model User {
+  id           Int      @id @default(autoincrement())
+  lineUserId   String   @unique @map("line_user_id")
+  displayName  String?  @map("display_name")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  bookings     Booking[]
+
+  @@map("users")
+}
+
+model Booking {
+  id            Int      @id @default(autoincrement())
+  lineUserId    String   @map("line_user_id")
+  name          String
+  phone         String
+  bookingDate   DateTime @map("booking_date")
+  bookingSlot   String   @map("booking_slot")
+  bookingItem   String   @map("booking_item")
+  people        Int      @default(1)
+  notes         String?
+  status        String   @default("confirmed")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  user          User?    @relation(fields: [lineUserId], references: [lineUserId])
+
+  @@index([lineUserId, status])
+  @@map("bookings")
+}
+
+model Conversation {
+  id           Int      @id @default(autoincrement())
+  key          String   @unique
+  smalltalkCount Int    @default(0) @map("smalltalk_count")
+  closedAt     DateTime? @map("closed_at")
+  flowJson     Json?    @map("flow_json")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@map("conversations")
+}
+
+model ChatMessage {
+  id            Int      @id @default(autoincrement())
+  conversationKey String  @map("conversation_key")
+  role          String
+  content       String   @db.Text
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@index([conversationKey, createdAt])
+  @@map("chat_messages")
+}
