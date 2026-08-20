@@ -74,3 +74,32 @@ export async function notifyBookingConfirmed(b: BookingRecord): Promise<void> {
     }
   }
 }
+
+// 取消／更改後通知（Push 給本人與管理員）
+export async function notifyBookingChanged(bookingId: number, action: "cancelled" | "amended"): Promise<void> {
+  const { PrismaClient } = await import("@prisma/client");
+  const prisma = new PrismaClient();
+  try {
+    const row = await prisma.booking.findUnique({ where: { id: bookingId } });
+    if (!row) return;
+    const actionText = action === "cancelled" ? "已取消" : "已更改";
+    const msg = `預約 #${bookingId} ${actionText}：${row.name} / ${ITEM_LABELS[row.bookingItem] ?? row.bookingItem} / ${row.bookingDate.toISOString().slice(0, 10)} ${row.bookingSlot}`;
+    const client = getLineClient();
+    // Push 給本人
+    try {
+      await client.pushMessage(row.lineUserId, [{ type: "text", text: `✅ 您的預約 ${actionText}：${msg.replace(`預約 #${bookingId} `, "")}` }]);
+    } catch (err) {
+      console.error("push change to customer failed:", err);
+    }
+    // Push 給管理員
+    for (const adminId of adminLineUserIds()) {
+      try {
+        await client.pushMessage(adminId, [{ type: "text", text: msg }]);
+      } catch (err) {
+        console.error("push change to admin failed:", err);
+      }
+    }
+  } finally {
+    await prisma.$disconnect();
+  }
+}
