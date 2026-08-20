@@ -90,8 +90,18 @@ async function handleOneEvent(event: WebhookEvent): Promise<void> {
         // passthrough（群組他人）→ 繼續一般流程
       }
 
-      // === 查詢本人預約 ===
-      if (userId && (text.includes("我的預約") || text.includes("查預約"))) {
+      // === 隱私防護：非管理員查他人/全部預約 → 拒絕 ===
+      const othersRe = /(大家的預約|所有.*預約|全部.*預約|別人的預約|其他.*預約|每個.*預約|每個人.*預約|全部的訂單|所有人的)/;
+      if (!isAdminLineUser(userId) && othersRe.test(text)) {
+        await client.replyMessage(replyToken!, [
+          textMessage("基於隱私保護，預約資訊僅供本人查詢。如需協助請直接聯繫店家，謝謝 🙏"),
+        ]);
+        return;
+      }
+
+      // === 查詢本人預約（自然語意；僅本人資料）===
+      const ownQueryRe = /(我的預約|查預約|我有.*預約|預約.*查|查詢.*預約|我的.*預約.*看|看一下我的預約)/;
+      if (userId && ownQueryRe.test(text)) {
         const bookings = await listOwnBookings(userId, 5);
         if (bookings.length === 0) {
           await client.replyMessage(replyToken!, [textMessage("您目前沒有預約記錄。")]);
@@ -130,6 +140,13 @@ async function handleOneEvent(event: WebhookEvent): Promise<void> {
 
       if (intent === "booking") {
         await client.replyMessage(replyToken!, [textMessage("好的！請填寫預約表單："), bookingButtonFlex()]);
+        return;
+      }
+
+      if (intent === "cancel" || intent === "amend") {
+        const flowCtx: FlowContext = { key, userId: userId ?? speakerId ?? "", speakerId, isGroup };
+        const reply = await startFlowMessages(intent, flowCtx);
+        await client.replyMessage(replyToken!, reply.messages.map((m) => textMessage(m)));
         return;
       }
 
