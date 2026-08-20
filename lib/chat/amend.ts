@@ -102,7 +102,9 @@ export async function handleFlowReplyMessages(text: string, ctx: FlowContext, fl
     const bookings = await listOwnBookings(ctx.userId, 5);
     const idx = parseInt(t, 10) - 1;
     if (isNaN(idx) || idx < 0 || idx >= bookings.length) {
-      return { messages: ["請回覆有效的編號（或「不用了」取消）。"], handled: true };
+      // 非編號輸入：自動退出流程，讓訊息走正常 AI 流程（避免卡死）
+      await setFlow(ctx.key, null);
+      return { messages: [], handled: false, passthrough: true };
     }
     const b = bookings[idx];
 

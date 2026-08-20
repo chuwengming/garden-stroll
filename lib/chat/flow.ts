@@ -11,6 +11,8 @@ export interface FlowState {
   createdAt: number;
 }
 
+const FLOW_TIMEOUT_MS = 5 * 60 * 1000; // 5 分鐘無動作自動失效
+
 export async function setFlow(key: string, state: FlowState | null): Promise<void> {
   const url = process.env.DATABASE_URL;
   if (!url) return;
@@ -42,7 +44,13 @@ export async function getFlow(key: string): Promise<FlowState | null> {
     const row = await prisma.conversation.findUnique({ where: { key } });
     await prisma.$disconnect();
     if (!row?.flowJson) return null;
-    return row.flowJson as unknown as FlowState;
+    const flow = row.flowJson as unknown as FlowState;
+    // 過期自動清除
+    if (flow && typeof flow.createdAt === "number" && Date.now() - flow.createdAt > FLOW_TIMEOUT_MS) {
+      await setFlow(key, null);
+      return null;
+    }
+    return flow;
   } catch {
     return null;
   }
