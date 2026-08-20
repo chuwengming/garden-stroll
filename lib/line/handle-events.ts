@@ -61,6 +61,12 @@ async function handleOneEvent(event: WebhookEvent): Promise<void> {
       const speakerId = sourceSpeakerId(event);
       const isGroup = event.source.type === "group" || event.source.type === "room";
 
+      console.log("[DEBUG] msg:", JSON.stringify({
+        text, key, userId, speakerId, isGroup,
+        isAdmin: userId ? isAdminLineUser(userId) : false,
+        hasAiKey: aiApiKey(),
+      }));
+
       // 1:1 才回「我的ID」
       if (text === "我的ID" && event.source.type === "user") {
         await client.replyMessage(replyToken!, [textMessage(`您的 LINE ID：${event.source.userId}`)]);
@@ -125,6 +131,7 @@ async function handleOneEvent(event: WebhookEvent): Promise<void> {
 
       // === 一般流程：AI 分類 ===
       const intent = aiApiKey() ? await classifyIntent(text) : (keywordIntent(text) as any) ?? "smalltalk";
+      console.log("[DEBUG] intent:", intent, "for:", text);
 
       if (intent === "booking") {
         await client.replyMessage(replyToken!, [textMessage("好的！請填寫預約表單："), bookingButtonFlex()]);
@@ -141,6 +148,7 @@ async function handleOneEvent(event: WebhookEvent): Promise<void> {
           return;
         }
         const reply = await generateReply(intent, text, count + (isSmalltalk ? 1 : 0));
+        console.log("[DEBUG] reply len:", reply.length, "head:", reply.slice(0, 60));
         await client.replyMessage(replyToken!, [textMessage(reply)]);
         if (isSmalltalk) await updateConversation(key, { smalltalkCount: count + 1 });
         return;
