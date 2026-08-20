@@ -1,6 +1,7 @@
 // app/api/health/route.ts — 健康檢查
 import { NextResponse } from "next/server";
 import { hasLineCredentials, databaseUrl } from "@/lib/line/env";
+import { hasAiKey, aiChatModel, aiWebSearchEnabled } from "@/lib/ai/env";
 
 export async function GET() {
   const creds = hasLineCredentials();
@@ -19,12 +20,14 @@ export async function GET() {
     }
   }
 
-  // ok 不因 MySQL 失敗而 false（invariants §6）
   return NextResponse.json({
     ok: true,
     hasChannelSecret: creds.hasChannelSecret,
     hasChannelAccessToken: creds.hasChannelAccessToken,
     databaseOk,
+    hasAiKey: hasAiKey(),
+    aiChatModel: aiChatModel(),
+    aiWebSearch: aiWebSearchEnabled(),
     timestamp: new Date().toISOString(),
   });
 }
