@@ -2,10 +2,23 @@
 import { NextResponse } from "next/server";
 import { hasLineCredentials, databaseUrl } from "@/lib/line/env";
 import { hasAiKey, aiChatModel, aiWebSearchEnabled } from "@/lib/ai/env";
+import { readFile } from "fs/promises";
+import { join } from "path";
 
 export async function GET() {
   const creds = hasLineCredentials();
   const dbUrl = databaseUrl();
+
+  // 臨時診斷：FAQ 讀取狀態
+  let faqStatus = { cwd: "", exists: false, length: 0, error: "" };
+  try {
+    const cwd = process.cwd();
+    const p = join(cwd, "docs", "faq.md");
+    const text = await readFile(p, "utf-8");
+    faqStatus = { cwd, exists: true, length: text.length, error: "" };
+  } catch (err) {
+    faqStatus = { cwd: process.cwd(), exists: false, length: 0, error: String(err) };
+  }
 
   let databaseOk = false;
   if (dbUrl) {
@@ -28,6 +41,7 @@ export async function GET() {
     hasAiKey: hasAiKey(),
     aiChatModel: aiChatModel(),
     aiWebSearch: aiWebSearchEnabled(),
+    faqStatus,
     timestamp: new Date().toISOString(),
   });
 }
