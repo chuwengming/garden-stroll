@@ -1,6 +1,5 @@
 // lib/line/handle-events.ts — webhook 事件處理（驗簽後）
 import type { WebhookEvent } from "@line/bot-sdk";
-import { getLineClient } from "./client";
 import { textMessage, bookingButtonFlex, welcomeMessages } from "./messages";
 import { classifyIntent } from "@/lib/ai/classify";
 import { generateReply } from "@/lib/ai/reply";
@@ -14,6 +13,7 @@ import { queryTotal, queryTopCustomers, queryList } from "@/lib/admin/query";
 import { getFlow, setFlow } from "@/lib/chat/flow";
 import { startFlowMessages, handleFlowReplyMessages, type FlowContext } from "@/lib/chat/amend";
 import { listOwnBookings } from "@/lib/booking/patch";
+import { replyOrPush } from "./reply-or-push";
 
 const ITEM_LABELS: Record<string, string> = {
   haircut: "剪髮", perm: "燙髮", color: "染髮", shampoo: "洗髮",
@@ -49,7 +49,6 @@ export async function handleWebhookEvents(events: WebhookEvent[]): Promise<void>
 }
 
 async function handleOneEvent(event: WebhookEvent): Promise<void> {
-  const client = getLineClient();
   const replyToken = replyTokenFromEvent(event);
 
   switch (event.type) {
@@ -64,7 +63,7 @@ async function handleOneEvent(event: WebhookEvent): Promise<void> {
 
       // 1:1 才回「我的ID」
       if (text === "我的ID" && event.source.type === "user") {
-        await client.replyMessage(replyToken!, [textMessage(`您的 LINE ID：${event.source.userId}`)]);
+        await replyOrPush(replyToken!, userId, [textMessage(`您的 LINE ID：${event.source.userId}`)]);
         return;
       }
 
@@ -73,7 +72,7 @@ async function handleOneEvent(event: WebhookEvent): Promise<void> {
         const adminQuery = parseAdminQuery(text);
         if (adminQuery) {
           const report = await runAdminQuery(adminQuery);
-          await client.replyMessage(replyToken!, [textMessage(report)]);
+          await replyOrPush(replyToken!, userId, [textMessage(report)]);
           return;
         }
       }
@@ -84,7 +83,7 @@ async function handleOneEvent(event: WebhookEvent): Promise<void> {
         const flowCtx: FlowContext = { key, userId: userId ?? speakerId ?? "", speakerId, isGroup };
         const reply = await handleFlowReplyMessages(text, flowCtx, flow);
         if (reply.handled) {
-          await client.replyMessage(replyToken!, reply.messages.map((m) => textMessage(m)));
+          await replyOrPush(replyToken!, userId, reply.messages.map((m) => textMessage(m)));
           return;
         }
         // passthrough（群組他人）→ 繼續一般流程
@@ -93,7 +92,7 @@ async function handleOneEvent(event: WebhookEvent): Promise<void> {
       // === 隱私防護：非管理員查他人/全部預約 → 拒絕 ===
       const othersRe = /(大家的預約|所有.*預約|全部.*預約|別人的預約|其他.*預約|每個.*預約|每個人.*預約|全部的訂單|所有人的)/;
       if (!isAdminLineUser(userId) && othersRe.test(text)) {
-        await client.replyMessage(replyToken!, [
+        await replyOrPush(replyToken!, userId, [
           textMessage("基於隱私保護，預約資訊僅供本人查詢。如需協助請直接聯繫店家，謝謝 🙏"),
         ]);
         return;
@@ -104,11 +103,11 @@ async function handleOneEvent(event: WebhookEvent): Promise<void> {
       if (userId && ownQueryRe.test(text)) {
         const bookings = await listOwnBookings(userId, 5);
         if (bookings.length === 0) {
-          await client.replyMessage(replyToken!, [textMessage("您目前沒有預約記錄。")]);
+          await replyOrPush(replyToken!, userId, [textMessage("您目前沒有預約記錄。")]);
           return;
         }
         const lines = bookings.map((b) => `#${b.id} ${b.bookingDate.toISOString().slice(0, 10)} ${b.bookingSlot} ${ITEM_LABELS[b.bookingItem] ?? b.bookingItem}（${b.status}）`);
-        await client.replyMessage(replyToken!, [textMessage(`您的預約：\n${lines.join("\n")}`)]);
+        await replyOrPush(replyToken!, userId, [textMessage(`您的預約：\n${lines.join("\n")}`)]);
         return;
       }
 
@@ -117,7 +116,7 @@ async function handleOneEvent(event: WebhookEvent): Promise<void> {
       if (kw === "cancel" || kw === "amend") {
         const flowCtx: FlowContext = { key, userId: userId ?? speakerId ?? "", speakerId, isGroup };
         const reply = await startFlowMessages(kw, flowCtx, text);
-        await client.replyMessage(replyToken!, reply.messages.map((m) => textMessage(m)));
+        await replyOrPush(replyToken!, userId, reply.messages.map((m) => textMessage(m)));
         return;
       }
 
@@ -125,9 +124,9 @@ async function handleOneEvent(event: WebhookEvent): Promise<void> {
       const conv = await getConversation(key);
       if (conv && isInCooldown(conv.closedAt)) {
         if (kw === "booking") {
-          await client.replyMessage(replyToken!, [textMessage("好的！請填寫預約表單："), bookingButtonFlex()]);
+          await replyOrPush(replyToken!, userId, [textMessage("好的！請填寫預約表單："), bookingButtonFlex()]);
         } else {
-          await client.replyMessage(replyToken!, [
+          await replyOrPush(replyToken!, userId, [
             textMessage("感謝您的訊息！如有預約需求，請傳「預約」；其他問題可稍後再問，謝謝 🙏"),
           ]);
         }
@@ -139,14 +138,14 @@ async function handleOneEvent(event: WebhookEvent): Promise<void> {
 
 
       if (intent === "booking") {
-        await client.replyMessage(replyToken!, [textMessage("好的！請填寫預約表單："), bookingButtonFlex()]);
+        await replyOrPush(replyToken!, userId, [textMessage("好的！請填寫預約表單："), bookingButtonFlex()]);
         return;
       }
 
       if (intent === "cancel" || intent === "amend") {
         const flowCtx: FlowContext = { key, userId: userId ?? speakerId ?? "", speakerId, isGroup };
         const reply = await startFlowMessages(intent, flowCtx, text);
-        await client.replyMessage(replyToken!, reply.messages.map((m) => textMessage(m)));
+        await replyOrPush(replyToken!, userId, reply.messages.map((m) => textMessage(m)));
         return;
       }
 
@@ -155,24 +154,25 @@ async function handleOneEvent(event: WebhookEvent): Promise<void> {
         const isSmalltalk = intent === "smalltalk";
         if (isSmalltalk && shouldCloseSmalltalk(count + 1)) {
           const reply = await generateReply("smalltalk", text, count + 1);
-          await client.replyMessage(replyToken!, [textMessage(reply)]);
+          await replyOrPush(replyToken!, userId, [textMessage(reply)]);
           await updateConversation(key, { smalltalkCount: count + 1, closedAt: new Date() });
           return;
         }
         const reply = await generateReply(intent, text, count + (isSmalltalk ? 1 : 0));
-        await client.replyMessage(replyToken!, [textMessage(reply)]);
+        await replyOrPush(replyToken!, userId, [textMessage(reply)]);
         if (isSmalltalk) await updateConversation(key, { smalltalkCount: count + 1 });
         return;
       }
 
-      await client.replyMessage(replyToken!, [
+      await replyOrPush(replyToken!, userId, [
         textMessage("您好，我是花園漫步預約小幫手。傳「預約」開啟表單；傳「我的ID」可查詢 LINE ID。"),
       ]);
       return;
     }
 
     case "follow": {
-      await client.replyMessage(replyToken!, welcomeMessages());
+      const followUserId = "userId" in event.source ? (event.source as { userId?: string }).userId : undefined;
+      await replyOrPush(replyToken!, followUserId, welcomeMessages());
       return;
     }
 

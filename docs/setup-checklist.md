@@ -5,7 +5,7 @@
 
 > **Skill 模板注意**：下列「§0 專案固定事實」若仍是「我的自然生活／既有 Railway 網域」，代表尚未替換。**新專案必須在 Intake／Phase 1 部署後改成自己的值**；勿照抄參考案的 LIFF ID／網域。
 
-最後驗證：2026-08-21（web-garden Phase 2：LIFF 預約送出成功、DB 寫入、管理員 Push）
+最後驗證：2026-08-21（Phase 5 完成：LIFF 預約、AI 客服、取消/更改、管理查庫、資料保留 TTL、reply→push fallback 全數驗收）
 
 ---
 

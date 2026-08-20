@@ -46,7 +46,8 @@
 
 - [ ] Railway MySQL 為權威來源；`processed_events.webhook_event_id` 唯一。
 - [ ] `conversations`／`chat_messages` 存在；processed_events 與 chat_messages 可設 TTL，不得破壞去重語意。
-- [ ] 資料表與欄位以 `docs/form-schema.yaml` 為準（可為 orders 或 bookings）；驗證邏輯前後端共用。
+- [x] 資料保留 TTL：`processed_events` 7 天、`chat_messages` 30 天（`lib/db/retention.ts`，可由 `/api/cron/retention` 觸發）。
+- [x] 資料表與欄位以 `docs/form-schema.yaml` 為準（可為 orders 或 bookings）；驗證邏輯前後端共用。
 - [ ] 必填／選填與成立條件寫在 form-schema，並反映於 invariants 本節。
 
 ## 5. UI／跨頁契約
@@ -63,7 +64,7 @@
 - [ ] 未通過 `X-Line-Signature` → 401。
 - [ ] 驗簽後業務／AI 失敗仍 → HTTP 200。
 - [ ] Webhook 約 1 秒內 200；慢工作用 `after()`。
-- [ ] Reply 失敗必須 Push **同一組** Message（含按鈕）。
+- [x] Reply 失敗必須 Push **同一組** Message（含按鈕）→ 已實作 `replyOrPush`。
 - [ ] 每則 webhook 事件獨立 try；一則失敗不拖垮同批。
 - [ ] 寫入 API 成功先回客戶端 JSON；LINE 通知用 `after()`。
 - [ ] `/api/health` 的 `ok` 不因 MySQL ping 失敗而 false；另給 `databaseOk`。
