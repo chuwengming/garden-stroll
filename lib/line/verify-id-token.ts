@@ -1,6 +1,12 @@
-// lib/line/verify-id-token.ts — 驗證 LINE Login ID Token
-import jwt from "jsonwebtoken";
+// lib/line/verify-id-token.ts — 驗證 LINE Login ID Token（ES256 via JWKS）
+import { createRemoteJWKSet, jwtVerify } from "jose";
 import { loginChannelId } from "./env";
+
+const JWKS_URL = "https://api.line.me/oauth2/v2.1/certs";
+const LINE_ISSUER = "https://access.line.me";
+
+// 遠端 JWKS（jose 內部會 cache；失敗會重新抓取）
+const jwks = createRemoteJWKSet(new URL(JWKS_URL));
 
 export interface LineIdTokenPayload {
   iss: string;
@@ -18,21 +24,15 @@ export async function verifyIdToken(
   nonce?: string
 ): Promise<LineIdTokenPayload> {
   const channelId = loginChannelId();
-  const channelSecret = process.env.LINE_LOGIN_CHANNEL_SECRET ?? "";
 
-  if (!channelSecret) {
-    throw new Error("Missing LINE_LOGIN_CHANNEL_SECRET for ID token verification");
-  }
-
-  const decoded = jwt.verify(idToken, channelSecret, {
-    algorithms: ["HS256"],
-    issuer: "https://access.line.me",
+  const { payload } = await jwtVerify(idToken, jwks, {
+    issuer: LINE_ISSUER,
     audience: channelId,
-  }) as LineIdTokenPayload;
+  });
 
-  if (nonce && decoded.nonce !== nonce) {
+  if (nonce && payload.nonce !== nonce) {
     throw new Error("ID token nonce mismatch");
   }
 
-  return decoded;
+  return payload as unknown as LineIdTokenPayload;
 }

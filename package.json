@@ -13,6 +13,7 @@
     "@line/bot-sdk": "^9.8.0",
     "@line/liff": "^2.30.0",
     "@prisma/client": "^6.8.0",
+    "jose": "^6.2.9",
     "jsonwebtoken": "^9.0.3",
     "next": "^15.3.0",
     "react": "^19.0.0",
