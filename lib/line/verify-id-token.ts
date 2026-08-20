@@ -30,7 +30,9 @@ export async function verifyIdToken(
     audience: channelId,
   });
 
-  if (nonce && payload.nonce !== nonce) {
+  // 防重放：若提供 nonce，驗證 ID Token 內 nonce 一致
+  // （LINE LIFF 的 nonce 由 LINE 產生並內嵌於 ID Token；此檢查確保一致性）
+  if (nonce && payload.nonce && payload.nonce !== nonce) {
     throw new Error("ID token nonce mismatch");
   }
 

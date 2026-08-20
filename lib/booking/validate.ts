@@ -28,6 +28,18 @@ export function todayInTaipei(): string {
   return `${y}-${m}-${d}`;
 }
 
+// 驗證真實曆法日期（避免 2026-02-31 被 Date 自動 rollover）
+export function isValidCalendarDate(dateStr: string): boolean {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr);
+  if (!m) return false;
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  const d = Number(m[3]);
+  if (mo < 1 || mo > 12) return false;
+  const daysInMonth = new Date(Date.UTC(y, mo, 0)).getUTCDate();
+  return d >= 1 && d <= daysInMonth;
+}
+
 export function weekdayOf(dateStr: string): number {
   const [y, m, d] = dateStr.split("-").map(Number);
   const date = new Date(Date.UTC(y, m - 1, d));
@@ -37,11 +49,18 @@ export function weekdayOf(dateStr: string): number {
 export function validateBooking(input: BookingInput): ValidationResult {
   const errors: string[] = [];
 
-  if (!input.name || input.name.trim().length === 0) errors.push("請填寫姓名");
+  if (!input.name || input.name.trim().length === 0) {
+    errors.push("請填寫姓名");
+  } else if (input.name.length > 50) {
+    errors.push("姓名過長（最多 50 字）");
+  }
   if (!input.phone || !/^[0-9\-\+\s]{8,15}$/.test(input.phone.trim())) errors.push("請填寫有效的電話號碼");
+  if (input.notes && input.notes.length > 190) errors.push("備註過長（最多 190 字）");
 
   if (!input.bookingDate) {
     errors.push("請選擇預約日期");
+  } else if (!isValidCalendarDate(input.bookingDate)) {
+    errors.push("預約日期格式或曆法不正確");
   } else {
     const today = todayInTaipei();
     if (input.bookingDate < today) errors.push("預約日期不得早於今天");

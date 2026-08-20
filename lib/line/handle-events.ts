@@ -10,7 +10,7 @@ import { aiApiKey } from "@/lib/ai/env";
 import { isAdminLineUser } from "./env";
 import { parseAdminQuery } from "@/lib/admin/parse";
 import { queryTotal, queryTopCustomers, queryList } from "@/lib/admin/query";
-import { getFlow, setFlow } from "@/lib/chat/flow";
+import { getFlow } from "@/lib/chat/flow";
 import { startFlowMessages, handleFlowReplyMessages, type FlowContext } from "@/lib/chat/amend";
 import { listOwnBookings } from "@/lib/booking/patch";
 import { replyOrPush } from "./reply-or-push";
@@ -99,7 +99,7 @@ async function handleOneEvent(event: WebhookEvent): Promise<void> {
       }
 
       // === 查詢本人預約（自然語意；僅本人資料）===
-      const ownQueryRe = /(我的預約|查預約|我有.*預約|預約.*查|查詢.*預約|我的.*預約.*看|看一下我的預約)/;
+      const ownQueryRe = /(我的預約|查預約|我有.*預約|預約.*查|查詢.*預約|我的.*預約.*看|看一下我的預約|我的訂單|查訂單)/;
       if (userId && ownQueryRe.test(text)) {
         const bookings = await listOwnBookings(userId, 5);
         if (bookings.length === 0) {
@@ -132,9 +132,16 @@ async function handleOneEvent(event: WebhookEvent): Promise<void> {
         }
         return;
       }
+      // 冷靜期已過：重置閒聊計數與收尾狀態（新一輪對話）
+      if (conv?.closedAt) {
+        await updateConversation(key, { smalltalkCount: 0, closedAt: null });
+        conv.smalltalkCount = 0;
+        conv.closedAt = null;
+      }
 
       // === 一般流程：AI 分類 ===
-      const intent = aiApiKey() ? await classifyIntent(text) : (keywordIntent(text) as any) ?? "smalltalk";
+      const kwIntent = keywordIntent(text);
+      const intent = aiApiKey() ? await classifyIntent(text) : (kwIntent === "query" ? "product" : kwIntent) ?? "smalltalk";
 
 
       if (intent === "booking") {
@@ -195,6 +202,9 @@ async function runAdminQuery(q: NonNullable<ReturnType<typeof parseAdminQuery>>)
   }
   const rows = await queryList(q.range === "today" ? "today" : "month", 10);
   if (rows.length === 0) return "目前沒有預約記錄。";
-  const lines = rows.map((r: any) => `#${r.id} ${r.name} ${r.bookingDate.toISOString().slice(0, 10)} ${r.bookingSlot} ${ITEM_LABELS[r.bookingItem] ?? r.bookingItem} ${r.people}人`);
+  const lines = rows.map((row) => {
+    const r = row as unknown as { id: number; name: string; bookingDate: Date; bookingSlot: string; bookingItem: string; people: number };
+    return `#${r.id} ${r.name} ${r.bookingDate.toISOString().slice(0, 10)} ${r.bookingSlot} ${ITEM_LABELS[r.bookingItem] ?? r.bookingItem} ${r.people}人`;
+  });
   return `📋 預約列表（${q.range === "today" ? "今天" : "本月"}）：\n${lines.join("\n")}`;
 }

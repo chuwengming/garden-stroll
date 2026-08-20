@@ -11,10 +11,6 @@ export function aiChatModel(): string {
   return process.env.AI_CHAT_MODEL ?? "deepseek-v4-flash";
 }
 
-export function aiClassifyModel(): string {
-  return process.env.AI_CLASSIFY_MODEL ?? "deepseek-v4-flash";
-}
-
 export function aiWebSearchEnabled(): boolean {
   return (process.env.AI_WEB_SEARCH ?? "on").toLowerCase() !== "off";
 }

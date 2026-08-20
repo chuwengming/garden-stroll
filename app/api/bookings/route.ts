@@ -1,7 +1,7 @@
 // app/api/bookings/route.ts — POST 預約（LIFF 送出即成立）
 import { NextRequest, NextResponse } from "next/server";
 import { verifyIdToken } from "@/lib/line/verify-id-token";
-import { validateBooking, todayInTaipei, weekdayOf, type BookingInput } from "@/lib/booking/validate";
+import { validateBooking, type BookingInput } from "@/lib/booking/validate";
 import { notifyBookingConfirmed } from "@/lib/line/notify-booking";
 
 export async function POST(req: NextRequest) {
@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
   try {
     const payload = await verifyIdToken(idToken, typeof nonce === "string" ? nonce : undefined);
     lineUserId = payload.sub;
-  } catch (err) {
+  } catch {
     return NextResponse.json({ error: "LINE 身份驗證失敗，請重新開啟表單" }, { status: 401 });
   }
 

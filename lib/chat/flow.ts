@@ -9,6 +9,8 @@ export interface FlowState {
   speakerId?: string;
   updates?: Record<string, unknown>;
   createdAt: number;
+  /** select 步驟顯示的清單（bookingId 依顯示順序）— 供編號對應，避免錯位 */
+  options?: number[];
 }
 
 const FLOW_TIMEOUT_MS = 5 * 60 * 1000; // 5 分鐘無動作自動失效

@@ -1,5 +1,4 @@
 // lib/chat/conversation.ts — 對話狀態管理
-import { isInCooldown, shouldCloseSmalltalk } from "./policy";
 
 export interface ConversationState {
   key: string;

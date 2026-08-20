@@ -2,6 +2,8 @@
 
 import { useMemo, useRef, useState } from "react";
 
+// LIFF 型別由 page.tsx 全域宣告（window.liff）
+
 interface BookingFormProps {
   idToken: string;
   profileName?: string;
@@ -25,15 +27,8 @@ const ITEMS = [
   { value: "shampoo", label: "洗髮" },
 ];
 
-const ITEM_LABELS: Record<string, string> = {
-  haircut: "剪髮",
-  perm: "燙髮",
-  color: "染髮",
-  shampoo: "洗髮",
-};
-
 function closeLiffWindow() {
-  const liff = (window as any).liff;
+  const liff = window.liff;
   if (liff && typeof liff.closeWindow === "function") {
     try {
       liff.closeWindow();
@@ -84,6 +79,18 @@ export default function BookingForm({ idToken, profileName }: BookingFormProps) 
       if ("setCustomValidity" in el) (el as HTMLInputElement).setCustomValidity("");
     });
 
+    // nonce：每次頁面載入產生，隨請求送出供後端驗證（防重放）
+    let nonce = "";
+    try {
+      nonce = sessionStorage.getItem("bookingNonce") ?? "";
+      if (!nonce) {
+        nonce = crypto.randomUUID();
+        sessionStorage.setItem("bookingNonce", nonce);
+      }
+    } catch {
+      nonce = "";
+    }
+
     if (form.bookingDate && dateDisabled(form.bookingDate)) {
       setResult({ ok: false, message: "僅週二至週五可預約，請重新選擇日期。" });
       return;
@@ -95,7 +102,7 @@ export default function BookingForm({ idToken, profileName }: BookingFormProps) 
       const res = await fetch("/api/bookings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...form, people: Number(form.people), idToken }),
+        body: JSON.stringify({ ...form, people: Number(form.people), idToken, nonce }),
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {

@@ -1,8 +1,8 @@
 // lib/chat/amend.ts — 取消／更改預約對話流程（回傳訊息由 handle-events 送出）
-import { listOwnBookings, cancelBooking, amendBooking } from "@/lib/booking/patch";
-import { setFlow, getFlow, type FlowState } from "./flow";
+import { listOwnBookings, findBookingById, cancelBooking, amendBooking } from "@/lib/booking/patch";
+import { setFlow, type FlowState } from "./flow";
 import { notifyBookingChanged } from "@/lib/line/notify-booking";
-import { todayInTaipei, weekdayOf } from "@/lib/booking/validate";
+import { todayInTaipei, weekdayOf } from "@/lib/booking/validate"; // 用於 field 步驟驗證
 
 const ITEM_LABELS: Record<string, string> = {
   haircut: "剪髮", perm: "燙髮", color: "染髮", shampoo: "洗髮",
@@ -30,8 +30,18 @@ function matchBooking(bookings: Awaited<ReturnType<typeof listOwnBookings>>, tex
     if (label && text.includes(label)) return true;
     return false;
   });
-  // 2. 日期匹配（YYYY-MM-DD 或 M/D）
-  const dateMatch = text.match(/(\d{1,2})[\/\-月](\d{1,2})/);
+  // 2. 日期匹配：完整 YYYY-MM-DD 優先，再試 M/D
+  const fullDateMatch = text.match(/(\d{4})[\/\-年](\d{1,2})[\/\-月](\d{1,2})/);
+  if (fullDateMatch) {
+    const m = fullDateMatch[2].padStart(2, "0");
+    const d = fullDateMatch[3].padStart(2, "0");
+    const dateHits = bookings.filter((b) => {
+      const iso = b.bookingDate.toISOString().slice(5, 10); // MM-DD
+      return iso === `${m}-${d}`;
+    });
+    if (dateHits.length > 0) return dateHits;
+  }
+  const dateMatch = text.match(/(?<!\d)(\d{1,2})[\/\-月](\d{1,2})(?!\d)/);
   if (dateMatch) {
     const m = dateMatch[1].padStart(2, "0");
     const d = dateMatch[2].padStart(2, "0");
@@ -70,11 +80,12 @@ export async function startFlowMessages(kind: "cancel" | "amend", ctx: FlowConte
     };
   }
 
-  // 多筆 → 列出讓使用者選編號
+  // 多筆 → 列出讓使用者選編號（options 記錄顯示順序，供 select 步驟對應）
   const lines = targets.map((b, i) => `${i + 1}. #${b.id} ${b.bookingDate.toISOString().slice(0, 10)} ${b.bookingSlot} ${ITEM_LABELS[b.bookingItem] ?? b.bookingItem}`);
   await setFlow(ctx.key, {
     kind, step: "select", bookingId: targets[0].id,
     speakerId: ctx.speakerId, createdAt: Date.now(),
+    options: targets.map((b) => b.id),
   });
 
   const hint = matched.length > 0 ? "（已依您提到的服務/日期篩選）" : "";
@@ -99,14 +110,19 @@ export async function handleFlowReplyMessages(text: string, ctx: FlowContext, fl
   }
 
   if (flow.step === "select") {
-    const bookings = await listOwnBookings(ctx.userId, 5);
+    // 用 flow.options（顯示清單順序）對應編號，避免與顯示清單錯位
+    const options = flow.options ?? [];
     const idx = parseInt(t, 10) - 1;
-    if (isNaN(idx) || idx < 0 || idx >= bookings.length) {
+    if (isNaN(idx) || idx < 0 || idx >= options.length) {
       // 非編號輸入：自動退出流程，讓訊息走正常 AI 流程（避免卡死）
       await setFlow(ctx.key, null);
       return { messages: [], handled: false, passthrough: true };
     }
-    const b = bookings[idx];
+    const b = await findBookingById(options[idx], ctx.userId);
+    if (!b) {
+      await setFlow(ctx.key, null);
+      return { messages: [], handled: false, passthrough: true };
+    }
 
     if (flow.kind === "cancel") {
       await setFlow(ctx.key, { kind: "cancel", step: "confirm", bookingId: b.id, speakerId: ctx.speakerId, createdAt: Date.now() });
@@ -204,7 +220,14 @@ export async function handleFlowReplyMessages(text: string, ctx: FlowContext, fl
   // === 更改確認 ===
   if (flow.kind === "amend" && flow.step === "confirm") {
     if (t === "確認" || t === "確定" || t === "是") {
-      const ok = await amendBooking(flow.bookingId, ctx.userId, flow.updates as any);
+      const updates = (flow.updates ?? {}) as {
+        bookingDate?: string;
+        bookingSlot?: string;
+        bookingItem?: string;
+        people?: number;
+        notes?: string;
+      };
+      const ok = await amendBooking(flow.bookingId, ctx.userId, updates);
       await setFlow(ctx.key, null);
       if (ok) {
         await notifyBookingChanged(flow.bookingId, "amended").catch(() => {});

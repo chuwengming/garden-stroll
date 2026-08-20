@@ -1,8 +1,7 @@
 // lib/line/notify-booking.ts — 預約成立通知
-import type { TextMessage, FlexMessage } from "@line/bot-sdk";
+import type { FlexMessage } from "@line/bot-sdk";
 import { getLineClient } from "./client";
 import { adminLineUserIds } from "./env";
-import type { BookingInput } from "@/lib/booking/validate";
 
 export interface BookingRecord {
   id: number;

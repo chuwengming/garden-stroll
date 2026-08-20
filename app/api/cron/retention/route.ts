@@ -3,10 +3,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { runRetentionCleanup } from "@/lib/db/retention";
 
 export async function GET(req: NextRequest) {
-  // 簡單驗證：僅允許帶 query token 或本機呼叫
+  // 安全：CRON_TOKEN 必設，且 query token 必須相符才執行（fail-closed）
   const token = req.nextUrl.searchParams.get("token");
   const expected = process.env.CRON_TOKEN;
-  if (expected && token !== expected) {
+  if (!expected || token !== expected) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   try {

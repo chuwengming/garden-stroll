@@ -3,9 +3,27 @@
 import { useEffect, useState, useCallback } from "react";
 import BookingForm from "./booking-form";
 
+interface LiffInitOptions {
+  liffId: string;
+  withLoginOnExternalBrowser?: boolean;
+}
+
+interface LiffProfile {
+  displayName?: string;
+}
+
+interface LiffLike {
+  init: (opts: LiffInitOptions) => Promise<void>;
+  isLoggedIn: () => boolean;
+  login: () => void;
+  getIDToken: () => string | null;
+  getProfile: () => Promise<LiffProfile>;
+  closeWindow?: () => void;
+}
+
 declare global {
   interface Window {
-    liff: any;
+    liff?: LiffLike;
   }
 }
 
@@ -26,19 +44,32 @@ export default function BookingPage() {
     }
     try {
       const liff = window.liff;
+      if (!liff) {
+        setState({ status: "error", message: "LIFF SDK 尚未就緒，請重新開啟表單" });
+        return;
+      }
       await liff.init({ liffId: LIFF_ID, withLoginOnExternalBrowser: true });
       if (!liff.isLoggedIn()) {
         liff.login();
         return;
       }
-      const profile = await liff.getProfile();
-      setState({
-        status: "ready",
-        idToken: liff.getIDToken(),
-        profileName: profile?.displayName,
-      });
-    } catch (err: any) {
-      setState({ status: "error", message: `LIFF 初始化失敗：${err?.message ?? String(err)}` });
+      const idToken = liff.getIDToken();
+      if (!idToken) {
+        setState({ status: "error", message: "登入失敗：無法取得 ID Token，請重新開啟表單" });
+        return;
+      }
+      // getProfile 失敗不得擋送出（invariants §5）：獨立 try，失敗僅失去自動帶入姓名
+      let profileName: string | undefined;
+      try {
+        const profile = await liff.getProfile();
+        profileName = profile?.displayName;
+      } catch (err: unknown) {
+        console.warn("getProfile failed (non-blocking):", err instanceof Error ? err.message : err);
+      }
+      setState({ status: "ready", idToken, profileName });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setState({ status: "error", message: `LIFF 初始化失敗：${msg}` });
     }
   }, []);
 

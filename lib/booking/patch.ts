@@ -12,6 +12,19 @@ export interface BookingRow {
   status: string;
 }
 
+export async function findBookingById(bookingId: number, lineUserId: string): Promise<BookingRow | null> {
+  const { PrismaClient } = await import("@prisma/client");
+  const prisma = new PrismaClient();
+  try {
+    const row = await prisma.booking.findFirst({
+      where: { id: bookingId, lineUserId },
+    });
+    return (row as unknown as BookingRow) ?? null;
+  } finally {
+    await prisma.$disconnect();
+  }
+}
+
 export async function cancelBooking(bookingId: number, lineUserId: string): Promise<boolean> {
   const { PrismaClient } = await import("@prisma/client");
   const prisma = new PrismaClient();
@@ -26,10 +39,18 @@ export async function cancelBooking(bookingId: number, lineUserId: string): Prom
   }
 }
 
+export interface BookingAmendInput {
+  bookingDate?: string | Date;
+  bookingSlot?: string;
+  bookingItem?: string;
+  people?: number;
+  notes?: string;
+}
+
 export async function amendBooking(
   bookingId: number,
   lineUserId: string,
-  updates: Partial<Pick<BookingRow, "bookingDate" | "bookingSlot" | "bookingItem" | "people" | "notes">>
+  updates: BookingAmendInput
 ): Promise<boolean> {
   const { PrismaClient } = await import("@prisma/client");
   const prisma = new PrismaClient();
