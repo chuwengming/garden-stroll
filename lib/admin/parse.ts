@@ -27,8 +27,8 @@ export function parseAdminQuery(text: string): AdminQuery {
     return { kind: "list", range: range === "today" ? "today" : "month" };
   }
 
-  // 總量 / 數量
-  if (/(總量|總數|數量|幾筆|多少|統計|次數)/.test(t)) {
+  // 總量 / 數量（避免「剪髮多少錢」等產品問價被誤判）
+  if (/(總量|總數|幾筆|統計|次數|共幾|累計)/.test(t)) {
     const range = matchRange(t) ?? "month";
     return { kind: "total", range };
   }
