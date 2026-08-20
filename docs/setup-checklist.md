@@ -109,8 +109,10 @@ Console 沒有「Link LINE account」按鈕，路徑是：右上頭像 → 帳�
 | 項目 | 設定 |
 |---|---|
 | 專案 | Line Reservation |
-| 服務 `web` | Source＝GitHub `chuwengming/mynaturelife`，分支 `master`；有公開網域 |
-| 服務 `MySQL` | 官方 MySQL 模板（含 volume） |
+| 服務 `web`（我的自然生活） | Source＝GitHub `chuwengming/mynaturelife`，分支 `master`；網域 `https://web-production-1ee6b.up.railway.app` |
+| 服務 `web-garden`（花園漫步） | Source＝GitHub `chuwengming/garden-stroll`，分支 `main`；網域 `https://web-garden-production.up.railway.app` |
+| 服務 `MySQL` | 官方 MySQL 模板（含 volume，我的自然生活用） |
+| 服務 `MySQL-bGKw` | 花園漫步專用 MySQL（含 volume） |
 | Healthcheck | `/api/health`（`railway.toml`） |
 | 啟動指令 | `npx prisma migrate deploy && npm start`（`railway.toml`） |
 

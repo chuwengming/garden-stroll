@@ -25,8 +25,6 @@ const ITEMS = [
   { value: "shampoo", label: "洗髮" },
 ];
 
-const WEEKDAY_NAMES = ["週日", "週一", "週二", "週三", "週四", "週五", "週六"];
-
 export default function BookingForm({ idToken, profileName }: BookingFormProps) {
   const [form, setForm] = useState({
     name: profileName ?? "",
@@ -40,7 +38,6 @@ export default function BookingForm({ idToken, profileName }: BookingFormProps) 
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
 
-  // 僅開放週二～週五；min = 台北時區今天
   const minDate = useMemo(() => {
     const now = new Date();
     const taipei = new Date(now.getTime() + 8 * 3600 * 1000);
@@ -54,13 +51,25 @@ export default function BookingForm({ idToken, profileName }: BookingFormProps) 
     const [y, m, d] = dateStr.split("-").map(Number);
     const date = new Date(Date.UTC(y, m - 1, d));
     const wd = date.getUTCDay();
-    return wd === 0 || wd === 1 || wd === 6; // Sun/Mon/Sat 不開放
+    return wd === 0 || wd === 1 || wd === 6;
   }
 
   const set = (key: string, value: string) => setForm((f) => ({ ...f, [key]: value }));
 
-  async function submit(e: React.FormEvent) {
+  async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    // 清除任何殘留的 custom validity，避免瀏覽器擋住 submit
+    const formEl = e.currentTarget;
+    formEl.querySelectorAll("input, select, textarea").forEach((el) => {
+      if ("setCustomValidity" in el) (el as HTMLInputElement).setCustomValidity("");
+    });
+
+    // 日期檢查：非開放日 → 明確錯誤
+    if (form.bookingDate && dateDisabled(form.bookingDate)) {
+      setResult({ ok: false, message: "僅週二至週五可預約，請重新選擇日期。" });
+      return;
+    }
+
     setSubmitting(true);
     setResult(null);
     try {
@@ -69,14 +78,15 @@ export default function BookingForm({ idToken, profileName }: BookingFormProps) 
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...form, people: Number(form.people), idToken }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
         setResult({ ok: true, message: "✅ 預約已成立！請至 LINE 聊天室查看明細。" });
+        setForm((f) => ({ ...f, bookingSlot: "", bookingItem: "", notes: "" }));
       } else {
-        setResult({ ok: false, message: data.error ?? "送出失敗" });
+        setResult({ ok: false, message: data.error ?? `送出失敗（HTTP ${res.status}）` });
       }
-    } catch {
-      setResult({ ok: false, message: "網路錯誤，請重試" });
+    } catch (err) {
+      setResult({ ok: false, message: `網路錯誤：${err instanceof Error ? err.message : String(err)}` });
     } finally {
       setSubmitting(false);
     }
@@ -88,12 +98,12 @@ export default function BookingForm({ idToken, profileName }: BookingFormProps) 
       <p style={{ fontSize: ".9rem", color: "#666" }}>僅週二～週五營業。送出即成立。</p>
 
       {result && (
-        <div style={{ margin: "1rem 0", padding: ".8rem", borderRadius: 8, background: result.ok ? "#e6f7ec" : "#fdecea", color: result.ok ? "#1d7a3c" : "#c0392b" }}>
+        <div style={{ margin: "1rem 0", padding: ".8rem", borderRadius: 8, background: result.ok ? "#e6f7ec" : "#fdecea", color: result.ok ? "#1d7a3c" : "#c0392b", whiteSpace: "pre-wrap" }}>
           {result.message}
         </div>
       )}
 
-      <form onSubmit={submit} style={{ display: "grid", gap: "1rem", marginTop: "1rem" }}>
+      <form onSubmit={submit} style={{ display: "grid", gap: "1rem", marginTop: "1rem" }} noValidate>
         <Field label="姓名 *">
           <input required value={form.name} onChange={(e) => set("name", e.target.value)} style={inputStyle} />
         </Field>
@@ -105,24 +115,6 @@ export default function BookingForm({ idToken, profileName }: BookingFormProps) 
             required type="date" value={form.bookingDate} min={minDate}
             onChange={(e) => set("bookingDate", e.target.value)}
             style={inputStyle}
-            onFocus={(e) => {
-              // 阻擋未開放日選擇（瀏覽器不支援 per-day disabled，用 invalid 提示）
-              const val = e.currentTarget.value;
-              if (val && dateDisabled(val)) {
-                e.currentTarget.setCustomValidity("僅週二至週五可預約");
-              } else {
-                e.currentTarget.setCustomValidity("");
-              }
-            }}
-            onInput={(e) => {
-              const val = (e.target as HTMLInputElement).value;
-              const el = e.target as HTMLInputElement;
-              if (val && dateDisabled(val)) {
-                el.setCustomValidity("僅週二至週五可預約");
-              } else {
-                el.setCustomValidity("");
-              }
-            }}
           />
         </Field>
         <Field label="時段 *">
