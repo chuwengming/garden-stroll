@@ -2,7 +2,7 @@
 
 > 隨專案演進持續累積。每條應可被人工或 agent 驗證（可檢查、可回歸）。
 > 本檔由 `line-bot-custom-service` skill 的模板建立；維護規則見同目錄 `living-invariants` 說明（或 Cursor living-invariants rule）。
-> 最後更新：2026-08-21（Phase 4 完成；AI 意圖含 unknown 反問、取消/更改智能匹配、FAQ 價格填實）
+> 最後更新：2026-08-21（Phase 5 完成 + Stage Verifier 修復：C1/M1/M2/M3 與 Minor 全數處理；FAQ 增修完成）
 
 > **參數**：以專案 `docs/form-schema.yaml` 與 Intake 為準。本專案 **terminology = booking（預約）**。
 
@@ -33,48 +33,59 @@
 
 ## 3. 環境與銜接
 
-- [ ] 外部設定權威：`docs/setup-checklist.md`；新坑同輪補入。
-- [ ] Messaging：`LINE_CHANNEL_SECRET`、`LINE_CHANNEL_ACCESS_TOKEN`。Login：`LINE_LOGIN_CHANNEL_ID`（驗 ID Token 必填）。兩組 Channel 不可混用；禁止寫死 repo。
-- [ ] `NEXT_PUBLIC_LINE_LIFF_ID` 來自 Login Channel 的 LIFF App。
-- [ ] Webhook：`POST /api/line/webhook`。LIFF 路徑以 checklist 為準（建議預設 `/liff/booking`，改路徑必同步 Console）。
-- [ ] AI：OpenAI 相容；`DEEPSEEK_API_KEY` 或 `AI_API_KEY` + `AI_BASE_URL`／模型變數。無 key 時服務仍須啟動。
-- [ ] `/chat/completions` 帶 `thinking: {type:"disabled"}`；`json_object` 時提示詞須含「json」。
-- [ ] **本店／本服務資訊**唯一事實來源：`docs/faq.md`；`TODO` 項必須改口請專人回覆，不得臆測。
-- [ ] 網路搜尋（若啟用）不得回答本店價格、規格、運費、付款、出貨等；失敗須退回只讀 FAQ。
+- [x] 外部設定權威：`docs/setup-checklist.md`；新坑同輪補入。
+- [x] Messaging：`LINE_CHANNEL_SECRET`、`LINE_CHANNEL_ACCESS_TOKEN`。Login：`LINE_LOGIN_CHANNEL_ID`（驗 ID Token 必填）。兩組 Channel 不可混用；禁止寫死 repo。
+- [x] `NEXT_PUBLIC_LINE_LIFF_ID` 來自 Login Channel 的 LIFF App。
+- [x] Webhook：`POST /api/line/webhook`。LIFF 路徑以 checklist 為準（建議預設 `/liff/booking`，改路徑必同步 Console）。
+- [x] AI：OpenAI 相容；`DEEPSEEK_API_KEY` 或 `AI_API_KEY` + `AI_BASE_URL`／模型變數。無 key 時服務仍須啟動。
+- [x] `/chat/completions` 帶 `thinking: {type:"disabled"}`；`json_object` 時提示詞須含「json」。
+- [x] **本店／本服務資訊**唯一事實來源：`docs/faq.md`；`TODO` 項必須改口請專人回覆，不得臆測。
+- [x] 網路搜尋（若啟用）不得回答本店價格、規格、運費、付款、出貨等；失敗須退回只讀 FAQ。
+- [x] Cron 清理：獨立 `cron-retention` service（cronSchedule `0 0 * * *` UTC）+ `CRON_TOKEN` 保護；勿設在長駐 web server。
 
 ## 4. 資料與設定
 
-- [ ] Railway MySQL 為權威來源；`processed_events.webhook_event_id` 唯一。
-- [ ] `conversations`／`chat_messages` 存在；processed_events 與 chat_messages 可設 TTL，不得破壞去重語意。
+- [x] Railway MySQL 為權威來源；`processed_events.webhook_event_id` 唯一。
+- [x] `conversations`／`chat_messages` 存在；processed_events 與 chat_messages 可設 TTL，不得破壞去重語意。
 - [x] 資料保留 TTL：`processed_events` 7 天、`chat_messages` 30 天（`lib/db/retention.ts`，可由 `/api/cron/retention` 觸發）。
 - [x] 資料表與欄位以 `docs/form-schema.yaml` 為準（可為 orders 或 bookings）；驗證邏輯前後端共用。
-- [ ] 必填／選填與成立條件寫在 form-schema，並反映於 invariants 本節。
+- [x] 必填／選填與成立條件寫在 form-schema，並反映於 invariants 本節。
+- [x] 欄位長度上限：name ≤ 50、notes ≤ 190（避免 VARCHAR(191) 溢位）。
 
 ## 5. UI／跨頁契約
 
-- [ ] Next.js 同時提供 Webhook 與 LIFF。
-- [ ] 僅 `NEXT_PUBLIC_LINE_LIFF_ID` 可進前端；Secret／Token 僅 server。
-- [ ] `liff.init` 全程一次；允許 `withLoginOnExternalBrowser`。
-- [ ] Scope：`openid` 必要；`profile` 選配，getProfile 失敗不得擋送出。
-- [ ] LIFF 錯誤須標明階段（init／login／profile）與原始 code。
-- [ ] 1:1 新單成立應 Push 給 `ADMIN_LINE_USER_IDS`。
+- [x] Next.js 同時提供 Webhook 與 LIFF。
+- [x] 僅 `NEXT_PUBLIC_LINE_LIFF_ID` 可進前端；Secret／Token 僅 server。
+- [x] `liff.init` 全程一次；允許 `withLoginOnExternalBrowser`。
+- [x] Scope：`openid` 必要；`profile` 選配，**getProfile 失敗不得擋送出**（獨立 try/catch 已實作）。
+- [x] LIFF 錯誤須標明階段（init／login／profile）與原始 code。
+- [x] 1:1 新單成立應 Push 給 `ADMIN_LINE_USER_IDS`。
+- [x] LIFF 送出成功 → 完成畫面 + `closeWindow` 返回對話（明細由 Push 送達）。
 
 ## 6. 禁止破壞
 
-- [ ] 未通過 `X-Line-Signature` → 401。
-- [ ] 驗簽後業務／AI 失敗仍 → HTTP 200。
-- [ ] Webhook 約 1 秒內 200；慢工作用 `after()`。
+- [x] 未通過 `X-Line-Signature` → 401。
+- [x] 驗簽後業務／AI 失敗仍 → HTTP 200。
+- [x] Webhook 約 1 秒內 200；慢工作用 `after()`。
 - [x] Reply 失敗必須 Push **同一組** Message（含按鈕）→ 已實作 `replyOrPush`。
-- [ ] 每則 webhook 事件獨立 try；一則失敗不拖垮同批。
-- [ ] 寫入 API 成功先回客戶端 JSON；LINE 通知用 `after()`。
-- [ ] `/api/health` 的 `ok` 不因 MySQL ping 失敗而 false；另給 `databaseOk`。
-- [ ] AI 語氣：客氣、繁中、短回覆、不催促、不宣稱療效、不在聊天室索取個資（導向表單）。
-- [ ] 驗證失敗不得寫入 DB，須回中文原因。
+- [x] 每則 webhook 事件獨立 try；一則失敗不拖垮同批。
+- [x] 寫入 API 成功先回客戶端 JSON；LINE 通知用 `after()`。
+- [x] `/api/health` 的 `ok` 不因 MySQL ping 失敗而 false；另給 `databaseOk`。
+- [x] AI 語氣：客氣、繁中、短回覆、不催促、不宣稱療效、不在聊天室索取個資（導向表單）。
+- [x] 驗證失敗不得寫入 DB，須回中文原因。
+- [x] **ID Token 驗證**：必須用 ES256 + JWKS（`api.line.me/oauth2/v2.1/certs`）；不得改回 HS256 + channel secret（會 401）。
+- [x] **LIFF getProfile 失敗不得擋送出**：getProfile 必須獨立 try/catch，失敗僅失去自動帶入姓名，表單照常渲染。
+- [x] **取消/更改流程編號**：select 步驟必須用 `flow.options`（顯示清單順序）對應編號；不得重新抓未匹配清單（會選錯預約）。
+- [x] **流程防卡死**：select 收到非編號輸入 → 自動退出流程；flow 5 分鐘超時自動清除。
+- [x] **keywordIntent 順序**：cancel/amend/query 必須先於泛化「預約」判斷，否則「取消預約」被誤判為 booking。
+- [x] **管理員查庫關鍵字**：不得含「多少／數量」（「剪髮多少錢」會被誤判為總量報表）；只用 `總量|總數|幾筆|統計|次數`。
+- [x] **`/api/cron/retention` 授權**：`CRON_TOKEN` 必設且比對一致才執行（fail-closed）；未設 token 一律 401。
+- [x] **日期曆法**：`YYYY-MM-DD` 須為真實曆法日期（`isValidCalendarDate`），不得靠 `Date` 自動 rollover（2026-02-31 → 3/3）。
 
 ## 7. 待確認
 
-- [ ] 表單欄位最終清單（見 form-schema）。
-- [ ] FAQ 缺項（各服務價格、付款方式、服務時長等）。
+- [x] 表單欄位最終清單（見 form-schema）。
+- [x] FAQ 已填實：各服務價格、付款方式、服務時長說明、設計師聯絡、用品寄存服務（見 docs/faq.md）。
 - [ ] Login Channel Developing vs Published。
 - [ ] 群組是否每則都回，或僅 mention。
 - [ ] 可預約日：僅週二至週五（見 form-schema `available_weekdays`）。
