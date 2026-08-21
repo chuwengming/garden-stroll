@@ -1,3 +1,12 @@
+-- Schedule v2 migration：重建表結構（舊資料刪除）
+
+DROP TABLE IF EXISTS `bookings`;
+DROP TABLE IF EXISTS `designer_leaves`;
+DROP TABLE IF EXISTS `processed_events`;
+DROP TABLE IF EXISTS `chat_messages`;
+DROP TABLE IF EXISTS `conversations`;
+DROP TABLE IF EXISTS `users`;
+
 -- CreateTable
 CREATE TABLE `processed_events` (
     `id` INTEGER NOT NULL AUTO_INCREMENT,
@@ -82,4 +91,3 @@ CREATE TABLE `chat_messages` (
 
 -- AddForeignKey
 ALTER TABLE `bookings` ADD CONSTRAINT `bookings_line_user_id_fkey` FOREIGN KEY (`line_user_id`) REFERENCES `users`(`line_user_id`) ON DELETE RESTRICT ON UPDATE CASCADE;
-
