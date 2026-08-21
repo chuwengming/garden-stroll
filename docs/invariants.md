@@ -1,7 +1,7 @@
 # Project Invariants（可執行全局契約）
 
 > 隨專案演進持續累積。每條應可被人工或 agent 驗證（可檢查、可回歸）。
-> 本檔由 `line-bot-custom-service` skill 的模板建立；維護規則見同目錄 `living-invariants` 說明（或 Cursor living-invariants rule）。
+> 本檔由 `line-bot-custom-service` skill 的模板建立；維護規則依 DSH 全域規範 `~/.dsh/AGENTS.md` 與 `~/.dsh/rules/living-invariants.mdc`（living project invariants）。
 > 最後更新：2026-08-21（Phase 5 完成 + Stage Verifier 修復：C1/M1/M2/M3 與 Minor 全數處理；FAQ 增修完成）
 
 > **參數**：以專案 `docs/form-schema.yaml` 與 Intake 為準。本專案 **terminology = booking（預約）**。
