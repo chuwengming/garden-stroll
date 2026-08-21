@@ -10,8 +10,9 @@ interface ListRow {
   id: number;
   name: string;
   bookingDate: Date;
-  bookingSlot: string;
-  bookingItem: string;
+  startTime: string;
+  endTime: string;
+  items: unknown;
   people: number;
   status: string;
 }
@@ -65,7 +66,7 @@ export async function queryList(range: "month" | "today", limit = 10): Promise<A
       },
       orderBy: { createdAt: "desc" },
       take: limit,
-      select: { id: true, name: true, bookingDate: true, bookingSlot: true, bookingItem: true, people: true, status: true },
+      select: { id: true, name: true, bookingDate: true, startTime: true, endTime: true, items: true, people: true, status: true },
     })) as unknown as ListRow[];
     return rows as unknown as Array<Record<string, unknown>>;
   } finally {

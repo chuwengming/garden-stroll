@@ -5,8 +5,9 @@ export interface BookingRow {
   name: string;
   phone: string;
   bookingDate: Date;
-  bookingSlot: string;
-  bookingItem: string;
+  startTime: string;
+  endTime: string;
+  items: string[];
   people: number;
   notes: string | null;
   status: string;
@@ -41,8 +42,9 @@ export async function cancelBooking(bookingId: number, lineUserId: string): Prom
 
 export interface BookingAmendInput {
   bookingDate?: string | Date;
-  bookingSlot?: string;
-  bookingItem?: string;
+  startTime?: string;
+  endTime?: string;
+  items?: string[];
   people?: number;
   notes?: string;
 }
@@ -59,8 +61,9 @@ export async function amendBooking(
       where: { id: bookingId, lineUserId, status: { not: "cancelled" } },
       data: {
         ...(updates.bookingDate ? { bookingDate: new Date(updates.bookingDate + "T00:00:00.000Z") } : {}),
-        ...(updates.bookingSlot ? { bookingSlot: updates.bookingSlot } : {}),
-        ...(updates.bookingItem ? { bookingItem: updates.bookingItem } : {}),
+        ...(updates.startTime ? { startTime: updates.startTime } : {}),
+        ...(updates.endTime ? { endTime: updates.endTime } : {}),
+        ...(updates.items ? { items: updates.items as unknown as object } : {}),
         ...(updates.people ? { people: updates.people } : {}),
         ...(updates.notes !== undefined ? { notes: updates.notes ?? null } : {}),
       },

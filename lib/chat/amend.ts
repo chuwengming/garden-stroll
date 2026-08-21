@@ -4,10 +4,8 @@ import { setFlow, type FlowState } from "./flow";
 import { notifyBookingChanged } from "@/lib/line/notify-booking";
 import { todayInTaipei, weekdayOf } from "@/lib/booking/validate"; // 用於 field 步驟驗證
 
-const ITEM_LABELS: Record<string, string> = {
-  haircut: "剪髮", perm: "燙髮", color: "染髮", shampoo: "洗髮",
-};
-const ITEM_MAP: Record<string, string> = { "剪髮": "haircut", "燙髮": "perm", "染髮": "color", "洗髮": "shampoo" };
+import { SERVICE_LABELS } from "@/lib/booking/durations";
+const ITEM_MAP: Record<string, string> = { "剪髮": "haircut", "燙髮": "perm", "染髮": "color", "洗髮": "shampoo", "護髮": "conditioning" };
 
 export interface FlowContext {
   key: string;
@@ -22,11 +20,16 @@ export interface FlowReply {
   passthrough?: boolean; // true = 群組他人訊息，交給一般流程
 }
 
+function itemsLabel(items: string[] | undefined): string {
+  if (!items) return "";
+  return items.map((it) => SERVICE_LABELS[it] ?? it).join("、");
+}
+
 // 從文字中抽取服務項目與日期，做智能匹配
 function matchBooking(bookings: Awaited<ReturnType<typeof listOwnBookings>>, text: string) {
   // 1. 服務項目匹配
   const itemHits = bookings.filter((b) => {
-    const label = ITEM_LABELS[b.bookingItem] ?? "";
+    const label = itemsLabel(b.items);
     if (label && text.includes(label)) return true;
     return false;
   });
@@ -69,7 +72,7 @@ export async function startFlowMessages(kind: "cancel" | "amend", ctx: FlowConte
   if (targets.length === 1) {
     // 只有一筆相符 → 直接進入確認
     const b = targets[0];
-    const label = `#${b.id} ${b.bookingDate.toISOString().slice(0, 10)} ${b.bookingSlot} ${ITEM_LABELS[b.bookingItem] ?? b.bookingItem}`;
+    const label = `#${b.id} ${b.bookingDate.toISOString().slice(0, 10)} ${b.startTime}～${b.endTime} ${itemsLabel(b.items)}`;
     await setFlow(ctx.key, {
       kind, step: "confirm", bookingId: b.id,
       speakerId: ctx.speakerId, createdAt: Date.now(),
@@ -81,7 +84,7 @@ export async function startFlowMessages(kind: "cancel" | "amend", ctx: FlowConte
   }
 
   // 多筆 → 列出讓使用者選編號（options 記錄顯示順序，供 select 步驟對應）
-  const lines = targets.map((b, i) => `${i + 1}. #${b.id} ${b.bookingDate.toISOString().slice(0, 10)} ${b.bookingSlot} ${ITEM_LABELS[b.bookingItem] ?? b.bookingItem}`);
+  const lines = targets.map((b, i) => `${i + 1}. #${b.id} ${b.bookingDate.toISOString().slice(0, 10)} ${b.startTime}～${b.endTime} ${itemsLabel(b.items)}`);
   await setFlow(ctx.key, {
     kind, step: "select", bookingId: targets[0].id,
     speakerId: ctx.speakerId, createdAt: Date.now(),
@@ -127,7 +130,7 @@ export async function handleFlowReplyMessages(text: string, ctx: FlowContext, fl
     if (flow.kind === "cancel") {
       await setFlow(ctx.key, { kind: "cancel", step: "confirm", bookingId: b.id, speakerId: ctx.speakerId, createdAt: Date.now() });
       return {
-        messages: [`確認要取消以下預約嗎？\n#${b.id} ${b.bookingDate.toISOString().slice(0, 10)} ${b.bookingSlot} ${ITEM_LABELS[b.bookingItem] ?? b.bookingItem}\n回「確認」取消，或「不用了」。`],
+        messages: [`確認要取消以下預約嗎？\n#${b.id} ${b.bookingDate.toISOString().slice(0, 10)} ${b.startTime}～${b.endTime} ${itemsLabel(b.items)}\n回「確認」取消，或「不用了」。`],
         handled: true,
       };
     } else {
@@ -160,14 +163,14 @@ export async function handleFlowReplyMessages(text: string, ctx: FlowContext, fl
     if (isNaN(fieldIdx) || fieldIdx < 1 || fieldIdx > 4) {
       return { messages: ["請回覆 1～4 選擇要更改的欄位。"], handled: true };
     }
-    const fieldMap = ["bookingDate", "bookingSlot", "bookingItem", "people"];
+    const fieldMap = ["bookingDate", "startTime", "items", "people"];
     const field = fieldMap[fieldIdx - 1];
     await setFlow(ctx.key, { ...flow, updates: { ...(flow.updates ?? {}), field } });
 
     const prompts: Record<string, string> = {
       bookingDate: "請輸入新日期（YYYY-MM-DD，週二～週五）：",
-      bookingSlot: "請輸入新時段（09:00～16:00）：",
-      bookingItem: "請輸入新服務項目（剪髮/燙髮/染髮/洗髮）：",
+      startTime: "請輸入新開始時段（09:00～16:00 整點）：",
+      items: "請輸入新服務項目（剪髮/燙髮/染髮/洗髮/護髮，可複選用逗號分隔）：",
       people: "請輸入新人數（1～10）：",
     };
     return { messages: [prompts[field]], handled: true };
@@ -191,17 +194,18 @@ export async function handleFlowReplyMessages(text: string, ctx: FlowContext, fl
         return { messages: ["僅週二至週五可預約。"], handled: true };
       }
       updates[field] = value;
-    } else if (field === "bookingSlot") {
+    } else if (field === "startTime") {
       if (!["09:00", "10:00", "11:00", "12:00", "13:00", "14:00", "15:00", "16:00"].includes(value)) {
         return { messages: ["時段請選 09:00～16:00 整點。"], handled: true };
       }
       updates[field] = value;
-    } else if (field === "bookingItem") {
-      const v = ITEM_MAP[value.trim()];
-      if (!v) {
-        return { messages: ["服務項目請選：剪髮／燙髮／染髮／洗髮。"], handled: true };
+    } else if (field === "items") {
+      const names = value.split(/[,，、\s]+/).filter(Boolean);
+      const mapped = names.map((n) => ITEM_MAP[n.trim()]).filter(Boolean);
+      if (mapped.length === 0) {
+        return { messages: ["服務項目請選：剪髮／燙髮／染髮／洗髮／護髮。"], handled: true };
       }
-      updates[field] = v;
+      updates[field] = mapped;
     } else if (field === "people") {
       const n = parseInt(value, 10);
       if (isNaN(n) || n < 1 || n > 10) {
@@ -222,8 +226,8 @@ export async function handleFlowReplyMessages(text: string, ctx: FlowContext, fl
     if (t === "確認" || t === "確定" || t === "是") {
       const updates = (flow.updates ?? {}) as {
         bookingDate?: string;
-        bookingSlot?: string;
-        bookingItem?: string;
+        startTime?: string;
+        items?: string[];
         people?: number;
         notes?: string;
       };

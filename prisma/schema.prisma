@@ -37,8 +37,9 @@ model Booking {
   name          String
   phone         String
   bookingDate   DateTime @map("booking_date")
-  bookingSlot   String   @map("booking_slot")
-  bookingItem   String   @map("booking_item")
+  startTime     String   @map("start_time")
+  endTime       String   @map("end_time")
+  items         Json     @map("items")
   people        Int      @default(1)
   notes         String?
   status        String   @default("confirmed")
@@ -47,8 +48,20 @@ model Booking {
 
   user          User?    @relation(fields: [lineUserId], references: [lineUserId])
 
-  @@index([lineUserId, status])
+  @@index([bookingDate, status])
   @@map("bookings")
+}
+
+model DesignerLeave {
+  id        Int      @id @default(autoincrement())
+  leaveDate DateTime @map("leave_date")
+  startTime String?  @map("start_time")   // null = 整天請假
+  endTime   String?  @map("end_time")
+  reason    String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([leaveDate])
+  @@map("designer_leaves")
 }
 
 model Conversation {

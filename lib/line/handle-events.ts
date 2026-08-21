@@ -9,15 +9,20 @@ import { shouldCloseSmalltalk, isInCooldown } from "@/lib/chat/policy";
 import { aiApiKey } from "@/lib/ai/env";
 import { isAdminLineUser } from "./env";
 import { classifyAdminIntent, type AdminQueryKind, type AdminQueryRange } from "@/lib/admin/classify";
+import { parseLeaveIntent } from "@/lib/admin/leave-parse";
+import { todayInTaipei } from "@/lib/booking/validate";
+import { findNextSlot, weekdayOf, type ScheduleBooking, type LeaveBlock } from "@/lib/booking/schedule";
+import { SERVICE_LABELS } from "@/lib/booking/durations";
 import { queryTotal, queryTopCustomers, queryList } from "@/lib/admin/query";
 import { getFlow } from "@/lib/chat/flow";
 import { startFlowMessages, handleFlowReplyMessages, type FlowContext } from "@/lib/chat/amend";
 import { listOwnBookings } from "@/lib/booking/patch";
 import { replyOrPush } from "./reply-or-push";
 
-const ITEM_LABELS: Record<string, string> = {
-  haircut: "剪髮", perm: "燙髮", color: "染髮", shampoo: "洗髮",
-};
+function itemsLabel(items: string[] | undefined): string {
+  if (!items) return "";
+  return items.map((it) => SERVICE_LABELS[it] ?? it).join("、");
+}
 
 function replyTokenFromEvent(event: WebhookEvent): string | undefined {
   return "replyToken" in event ? (event as { replyToken?: string }).replyToken : undefined;
@@ -67,6 +72,16 @@ async function handleOneEvent(event: WebhookEvent): Promise<void> {
         return;
       }
 
+      // === 管理員：請假管理（僅 1:1 + ADMIN）===
+      if (event.source.type === "user" && userId && isAdminLineUser(userId)) {
+        const leaveIntent = await parseLeaveIntent(text, todayInTaipei());
+        if (leaveIntent) {
+          const msg = await handleLeaveAction(leaveIntent);
+          await replyOrPush(replyToken!, userId, [textMessage(msg)]);
+          return;
+        }
+      }
+
       // === 管理員查庫（僅 1:1 + ADMIN；AI 意圖分流，規則為 fallback）===
       if (event.source.type === "user" && userId && isAdminLineUser(userId)) {
         const adminIntent = await classifyAdminIntent(text);
@@ -106,7 +121,7 @@ async function handleOneEvent(event: WebhookEvent): Promise<void> {
           await replyOrPush(replyToken!, userId, [textMessage("您目前沒有預約記錄。")]);
           return;
         }
-        const lines = bookings.map((b) => `#${b.id} ${b.bookingDate.toISOString().slice(0, 10)} ${b.bookingSlot} ${ITEM_LABELS[b.bookingItem] ?? b.bookingItem}（${b.status}）`);
+        const lines = bookings.map((b) => `#${b.id} ${b.bookingDate.toISOString().slice(0, 10)} ${b.startTime}～${b.endTime} ${itemsLabel(b.items)}（${b.status}）`);
         await replyOrPush(replyToken!, userId, [textMessage(`您的預約：\n${lines.join("\n")}`)]);
         return;
       }
@@ -145,7 +160,12 @@ async function handleOneEvent(event: WebhookEvent): Promise<void> {
 
 
       if (intent === "booking") {
-        await replyOrPush(replyToken!, userId, [textMessage("好的！請填寫預約表單："), bookingButtonFlex()]);
+        // 預約意圖：建議下一個可用時段（預設剪髮 1 小時）
+        const suggestion = await suggestNextSlot();
+        const msg = suggestion
+          ? `好的！${suggestion}。請點下方按鈕開啟預約表單：`
+          : "好的！請填寫預約表單：";
+        await replyOrPush(replyToken!, userId, [textMessage(msg), bookingButtonFlex()]);
         return;
       }
 
@@ -203,8 +223,100 @@ async function runAdminQuery(q: { kind: AdminQueryKind; range: AdminQueryRange }
   const rows = await queryList(q.range === "today" ? "today" : "month", 10);
   if (rows.length === 0) return "目前沒有預約記錄。";
   const lines = rows.map((row) => {
-    const r = row as unknown as { id: number; name: string; bookingDate: Date; bookingSlot: string; bookingItem: string; people: number };
-    return `#${r.id} ${r.name} ${r.bookingDate.toISOString().slice(0, 10)} ${r.bookingSlot} ${ITEM_LABELS[r.bookingItem] ?? r.bookingItem} ${r.people}人`;
+    const r = row as unknown as { id: number; name: string; bookingDate: Date; startTime: string; endTime: string; items: unknown; people: number };
+    const itemArr = Array.isArray(r.items) ? (r.items as string[]) : [];
+    return `#${r.id} ${r.name} ${r.bookingDate.toISOString().slice(0, 10)} ${r.startTime}～${r.endTime} ${itemsLabel(itemArr)} ${r.people}人`;
   });
   return `📋 預約列表（${q.range === "today" ? "今天" : "本月"}）：\n${lines.join("\n")}`;
 }
+
+// 管理員請假動作處理
+
+
+// 建議下一個可預約時段（預設剪髮；回傳「9/12（四）10:00」或 null）
+async function suggestNextSlot(): Promise<string | null> {
+  const dbUrl = process.env.DATABASE_URL;
+  if (!dbUrl) return null;
+  try {
+    const { PrismaClient } = await import("@prisma/client");
+    const prisma = new PrismaClient();
+    const today = todayInTaipei();
+    const [bookingRows, leaveRows] = await Promise.all([
+      prisma.booking.findMany({ where: { status: { not: "cancelled" } } }),
+      prisma.designerLeave.findMany(),
+    ]);
+    await prisma.$disconnect();
+
+    const existing: ScheduleBooking[] = bookingRows.map((r) => ({
+      bookingDate: r.bookingDate.toISOString().slice(0, 10),
+      startTime: r.startTime,
+      endTime: r.endTime,
+      items: Array.isArray(r.items) ? (r.items as string[]) : [],
+      status: r.status,
+    }));
+    const leaves: LeaveBlock[] = leaveRows.map((r) => ({
+      leaveDate: r.leaveDate.toISOString().slice(0, 10),
+      startTime: r.startTime,
+      endTime: r.endTime,
+    }));
+
+    const next = findNextSlot(today, ["haircut"], existing, leaves, (d) => [2, 3, 4, 5].includes(weekdayOf(d)), 30);
+    if (!next) return null;
+    const wd = ["日", "一", "二", "三", "四", "五", "六"][weekdayOf(next.date)];
+    const [, m, d] = next.date.split("-");
+    return `${Number(m)}/${Number(d)}（${wd}）${next.slot}`;
+  } catch (err) {
+    console.error("suggestNextSlot failed:", err);
+    return null;
+  }
+}
+
+async function handleLeaveAction(lv: {
+  action: "add" | "remove" | "list" | null;
+  leaveDate: string;
+  startTime: string | null;
+  endTime: string | null;
+  reason?: string | null;
+}): Promise<string> {
+  const dbUrl = process.env.DATABASE_URL;
+  if (!dbUrl) return "伺服器未設定資料庫";
+
+  const { PrismaClient } = await import("@prisma/client");
+  const prisma = new PrismaClient();
+  try {
+    if (lv.action === "list") {
+      const rows = await prisma.designerLeave.findMany({ orderBy: { leaveDate: "asc" } });
+      if (rows.length === 0) return "目前沒有請假紀錄。";
+      const lines = rows.map((r) => {
+        const d = r.leaveDate.toISOString().slice(0, 10);
+        const t = r.startTime ? `${r.startTime}～${r.endTime}` : "整天";
+        return `${d} ${t}${r.reason ? "（" + r.reason + "）" : ""}`;
+      });
+      return `📅 請假紀錄：\n${lines.join("\n")}`;
+    }
+
+    if (lv.action === "remove") {
+      if (!lv.leaveDate) return "請提供要刪除的請假日期";
+      const deleted = await prisma.designerLeave.deleteMany({
+        where: { leaveDate: new Date(lv.leaveDate + "T00:00:00.000Z") },
+      });
+      return deleted.count > 0 ? `✅ 已刪除 ${lv.leaveDate} 的請假` : `找不到 ${lv.leaveDate} 的請假紀錄`;
+    }
+
+    // add
+    if (!lv.leaveDate) return "請提供請假日期（例如：9/12 請假）";
+    await prisma.designerLeave.create({
+      data: {
+        leaveDate: new Date(lv.leaveDate + "T00:00:00.000Z"),
+        startTime: lv.startTime,
+        endTime: lv.endTime,
+        reason: lv.reason ?? null,
+      },
+    });
+    const period = lv.startTime ? `${lv.startTime}～${lv.endTime}` : "整天";
+    return `✅ 已設定請假：${lv.leaveDate} ${period}${lv.reason ? "（" + lv.reason + "）" : ""}`;
+  } finally {
+    await prisma.$disconnect();
+  }
+}
+
