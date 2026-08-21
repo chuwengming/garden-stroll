@@ -8,7 +8,7 @@ import { getConversation, updateConversation } from "@/lib/chat/conversation";
 import { shouldCloseSmalltalk, isInCooldown } from "@/lib/chat/policy";
 import { aiApiKey } from "@/lib/ai/env";
 import { isAdminLineUser } from "./env";
-import { parseAdminQuery } from "@/lib/admin/parse";
+import { classifyAdminIntent, type AdminQueryKind, type AdminQueryRange } from "@/lib/admin/classify";
 import { queryTotal, queryTopCustomers, queryList } from "@/lib/admin/query";
 import { getFlow } from "@/lib/chat/flow";
 import { startFlowMessages, handleFlowReplyMessages, type FlowContext } from "@/lib/chat/amend";
@@ -67,11 +67,11 @@ async function handleOneEvent(event: WebhookEvent): Promise<void> {
         return;
       }
 
-      // === 管理員查庫（僅 1:1 + ADMIN）===
+      // === 管理員查庫（僅 1:1 + ADMIN；AI 意圖分流，規則為 fallback）===
       if (event.source.type === "user" && userId && isAdminLineUser(userId)) {
-        const adminQuery = parseAdminQuery(text);
-        if (adminQuery) {
-          const report = await runAdminQuery(adminQuery);
+        const adminIntent = await classifyAdminIntent(text);
+        if (adminIntent.isAdminQuery) {
+          const report = await runAdminQuery(adminIntent);
           await replyOrPush(replyToken!, userId, [textMessage(report)]);
           return;
         }
@@ -188,7 +188,7 @@ async function handleOneEvent(event: WebhookEvent): Promise<void> {
   }
 }
 
-async function runAdminQuery(q: NonNullable<ReturnType<typeof parseAdminQuery>>): Promise<string> {
+async function runAdminQuery(q: { kind: AdminQueryKind; range: AdminQueryRange }): Promise<string> {
   if (q.kind === "total") {
     const n = await queryTotal(q.range);
     const label = q.range === "last_month" ? "上月" : q.range === "today" ? "今天" : "本月";
