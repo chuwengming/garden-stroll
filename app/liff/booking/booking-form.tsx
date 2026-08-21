@@ -8,11 +8,11 @@ interface BookingFormProps {
 }
 
 const ITEMS = [
-  { value: "shampoo", label: "洗髮（40 分）" },
-  { value: "conditioning", label: "護髮（20 分）" },
-  { value: "haircut", label: "剪髮（1 小時）" },
-  { value: "color", label: "染髮（2.5 小時）" },
-  { value: "perm", label: "燙髮（3 小時）" },
+  { value: "shampoo", label: "洗髮" },
+  { value: "conditioning", label: "護髮" },
+  { value: "haircut", label: "剪髮" },
+  { value: "color", label: "染髮" },
+  { value: "perm", label: "燙髮" },
 ];
 
 const WEEKDAY_LABELS = ["日", "一", "二", "三", "四", "五", "六"];
@@ -192,7 +192,7 @@ export default function BookingForm({ idToken, profileName }: BookingFormProps) 
           <input required type="tel" value={form.phone} onChange={(e) => set("phone", e.target.value)} style={inputStyle} placeholder="09xx-xxx-xxx" />
         </Field>
 
-        <Field label="服務項目 *（可複選，總工時自動計算）">
+        <Field label="服務項目 *（可複選）">
           <div style={{ display: "grid", gap: ".5rem" }}>
             {ITEMS.map((it) => (
               <label key={it.value} style={{ display: "flex", alignItems: "center", gap: ".5rem", padding: ".5rem", border: "1px solid #ddd", borderRadius: 8, background: form.items.includes(it.value) ? "#e6f7ec" : "#fff" }}>

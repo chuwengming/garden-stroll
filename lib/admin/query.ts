@@ -74,6 +74,34 @@ export async function queryList(range: "month" | "today", limit = 10): Promise<A
   }
 }
 
+// 查詢特定預約/客人的詳細資料（含電話）
+export async function queryDetail(keyword: string): Promise<Array<Record<string, unknown>>> {
+  const { PrismaClient } = await import("@prisma/client");
+  const prisma = new PrismaClient();
+  try {
+    // keyword 可能是：預約編號（#3 / 3）或客人姓名
+    const idMatch = /#?(\d+)/.exec(keyword);
+    const rows = await prisma.booking.findMany({
+      where: {
+        status: { not: "cancelled" },
+        OR: [
+          ...(idMatch ? [{ id: Number(idMatch[1]) }] : []),
+          { name: { contains: keyword.replace(/[#\s]/g, "") } },
+        ],
+      },
+      orderBy: { bookingDate: "desc" },
+      take: 5,
+      select: {
+        id: true, name: true, phone: true, bookingDate: true,
+        startTime: true, endTime: true, items: true, people: true, notes: true, status: true,
+      },
+    });
+    return rows as unknown as Array<Record<string, unknown>>;
+  } finally {
+    await prisma.$disconnect();
+  }
+}
+
 function pickRange(range: "month" | "last_month" | "today"): DateRange {
   if (range === "last_month") return lastMonthRange();
   if (range === "today") return todayRange();

@@ -13,7 +13,7 @@ import { parseLeaveIntent } from "@/lib/admin/leave-parse";
 import { todayInTaipei } from "@/lib/booking/validate";
 import { findNextSlot, weekdayOf, type ScheduleBooking, type LeaveBlock } from "@/lib/booking/schedule";
 import { SERVICE_LABELS } from "@/lib/booking/durations";
-import { queryTotal, queryTopCustomers, queryList } from "@/lib/admin/query";
+import { queryTotal, queryTopCustomers, queryList, queryDetail } from "@/lib/admin/query";
 import { getFlow } from "@/lib/chat/flow";
 import { startFlowMessages, handleFlowReplyMessages, type FlowContext } from "@/lib/chat/amend";
 import { listOwnBookings } from "@/lib/booking/patch";
@@ -86,7 +86,7 @@ async function handleOneEvent(event: WebhookEvent): Promise<void> {
       if (event.source.type === "user" && userId && isAdminLineUser(userId)) {
         const adminIntent = await classifyAdminIntent(text);
         if (adminIntent.isAdminQuery) {
-          const report = await runAdminQuery(adminIntent);
+          const report = await runAdminQuery(adminIntent, text);
           await replyOrPush(replyToken!, userId, [textMessage(report)]);
           return;
         }
@@ -208,9 +208,27 @@ async function handleOneEvent(event: WebhookEvent): Promise<void> {
   }
 }
 
-async function runAdminQuery(q: { kind: AdminQueryKind; range: AdminQueryRange }): Promise<string> {
+async function runAdminQuery(q: { kind: AdminQueryKind; range: AdminQueryRange }, text?: string): Promise<string> {
+  if (q.kind === "detail" && text) {
+    // 查特定預約/客人詳細資料（電話等）
+    const keyword = text
+      .replace(/電話|聯絡方式|的電話|聯絡|查一下|給我|查詢|請|預約者|客人|小姐|先生|資訊|資料/g, "")
+      .replace(/[，。？、\s]/g, "")
+      .trim();
+    const rows = await queryDetail(keyword || text);
+    if (rows.length === 0) return "找不到相符的預約或客人。";
+    const lines = rows.map((row) => {
+      const r = row as unknown as {
+        id: number; name: string; phone: string; bookingDate: Date;
+        startTime: string; endTime: string; items: unknown; people: number; notes: string | null; status: string;
+      };
+      const itemArr = Array.isArray(r.items) ? (r.items as string[]) : [];
+      return `#${r.id} ${r.name}｜${r.phone}｜${r.bookingDate.toISOString().slice(0, 10)} ${r.startTime}～${r.endTime} ${itemsLabel(itemArr)} ${r.people}人${r.notes ? "｜備註:" + r.notes : ""}`;
+    });
+    return `🔍 查詢結果：\n${lines.join("\n")}`;
+  }
   if (q.kind === "total") {
-    const n = await queryTotal(q.range);
+    const n = await queryTotal(q.range === "last_month" ? "last_month" : q.range === "today" ? "today" : "month");
     const label = q.range === "last_month" ? "上月" : q.range === "today" ? "今天" : "本月";
     return `📊 ${label}預約總量：${n} 筆（不含已取消）`;
   }
