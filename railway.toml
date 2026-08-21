@@ -4,4 +4,4 @@ builder = "nixpacks"
 [deploy]
 healthcheckPath = "/api/health"
 healthcheckTimeout = 300
-startCommand = "node fix-migration.cjs && prisma migrate deploy && npm start"
+startCommand = "prisma migrate deploy && npm start"
