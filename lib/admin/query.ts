@@ -1,20 +1,10 @@
 // lib/admin/query.ts — 管理員固定查詢工具（invariants：不得任意 SQL）
 import { thisMonthRange, lastMonthRange, todayRange, type DateRange } from "@/lib/booking/period";
+import type { AdminBookingRow } from "./format";
 
 interface TopRow {
   lineUserId: string;
   _count: { lineUserId: number };
-}
-
-interface ListRow {
-  id: number;
-  name: string;
-  bookingDate: Date;
-  startTime: string;
-  endTime: string;
-  items: unknown;
-  people: number;
-  status: string;
 }
 
 export async function queryTotal(range: "month" | "last_month" | "today"): Promise<number> {
@@ -33,7 +23,10 @@ export async function queryTotal(range: "month" | "last_month" | "today"): Promi
   }
 }
 
-export async function queryTopCustomers(range: "month" | "last_month", limit = 5): Promise<Array<{ lineUserId: string; count: number }>> {
+export async function queryTopCustomers(
+  range: "month" | "last_month",
+  limit = 5
+): Promise<Array<{ lineUserId: string; count: number; name: string; phone: string }>> {
   const { PrismaClient } = await import("@prisma/client");
   const prisma = new PrismaClient();
   const r = pickRange(range);
@@ -48,55 +41,88 @@ export async function queryTopCustomers(range: "month" | "last_month", limit = 5
       orderBy: { _count: { lineUserId: "desc" } },
       take: limit,
     })) as unknown as TopRow[];
-    return rows.map((row) => ({ lineUserId: row.lineUserId, count: row._count.lineUserId }));
+
+    const result: Array<{ lineUserId: string; count: number; name: string; phone: string }> = [];
+    for (const row of rows) {
+      const latest = await prisma.booking.findFirst({
+        where: { lineUserId: row.lineUserId, status: { not: "cancelled" } },
+        orderBy: { createdAt: "desc" },
+        select: { name: true, phone: true },
+      });
+      result.push({
+        lineUserId: row.lineUserId,
+        count: row._count.lineUserId,
+        name: latest?.name ?? "—",
+        phone: latest?.phone ?? "—",
+      });
+    }
+    return result;
   } finally {
     await prisma.$disconnect();
   }
 }
 
-export async function queryList(range: "month" | "today", limit = 10): Promise<Array<Record<string, unknown>>> {
+const bookingSelect = {
+  id: true,
+  name: true,
+  phone: true,
+  bookingDate: true,
+  startTime: true,
+  endTime: true,
+  items: true,
+  people: true,
+  notes: true,
+  status: true,
+} as const;
+
+export async function queryList(range: "month" | "today", limit = 10): Promise<AdminBookingRow[]> {
   const { PrismaClient } = await import("@prisma/client");
   const prisma = new PrismaClient();
   const r = pickRange(range);
   try {
-    const rows = (await prisma.booking.findMany({
+    return (await prisma.booking.findMany({
       where: {
         status: { not: "cancelled" },
         createdAt: { gte: r.start, lt: r.end },
       },
       orderBy: { createdAt: "desc" },
       take: limit,
-      select: { id: true, name: true, bookingDate: true, startTime: true, endTime: true, items: true, people: true, status: true },
-    })) as unknown as ListRow[];
-    return rows as unknown as Array<Record<string, unknown>>;
+      select: bookingSelect,
+    })) as AdminBookingRow[];
   } finally {
     await prisma.$disconnect();
   }
 }
 
-// 查詢特定預約/客人的詳細資料（含電話）
-export async function queryDetail(keyword: string): Promise<Array<Record<string, unknown>>> {
+/** 查詢特定預約／客人（編號或姓名）；keyword 空字串時回傳最近預約 */
+export async function queryDetail(keyword: string, limit = 5): Promise<AdminBookingRow[]> {
   const { PrismaClient } = await import("@prisma/client");
   const prisma = new PrismaClient();
+  const kw = keyword.replace(/[#\s]/g, "").trim();
   try {
-    // keyword 可能是：預約編號（#3 / 3）或客人姓名
-    const idMatch = /#?(\d+)/.exec(keyword);
-    const rows = await prisma.booking.findMany({
+    if (!kw) {
+      return (await prisma.booking.findMany({
+        where: { status: { not: "cancelled" } },
+        orderBy: { createdAt: "desc" },
+        take: limit,
+        select: bookingSelect,
+      })) as AdminBookingRow[];
+    }
+
+    const idMatch = /^(\d+)$/.exec(kw);
+    return (await prisma.booking.findMany({
       where: {
         status: { not: "cancelled" },
         OR: [
           ...(idMatch ? [{ id: Number(idMatch[1]) }] : []),
-          { name: { contains: keyword.replace(/[#\s]/g, "") } },
+          { name: { contains: kw } },
+          { phone: { contains: kw } },
         ],
       },
       orderBy: { bookingDate: "desc" },
-      take: 5,
-      select: {
-        id: true, name: true, phone: true, bookingDate: true,
-        startTime: true, endTime: true, items: true, people: true, notes: true, status: true,
-      },
-    });
-    return rows as unknown as Array<Record<string, unknown>>;
+      take: limit,
+      select: bookingSelect,
+    })) as AdminBookingRow[];
   } finally {
     await prisma.$disconnect();
   }

@@ -16,6 +16,8 @@ import { buildBookingInviteMessage } from "@/lib/booking/booking-invite";
 import { isAvailabilityBookingQuestion } from "@/lib/booking/availability-intent";
 import { SERVICE_LABELS } from "@/lib/booking/durations";
 import { queryTotal, queryTopCustomers, queryList, queryDetail } from "@/lib/admin/query";
+import { formatAdminBookingLine } from "@/lib/admin/format";
+import { extractDetailKeyword } from "@/lib/admin/detail-keyword";
 import { getFlow } from "@/lib/chat/flow";
 import { startFlowMessages, handleFlowReplyMessages, type FlowContext } from "@/lib/chat/amend";
 import { listOwnBookings } from "@/lib/booking/patch";
@@ -254,22 +256,11 @@ async function handleOneEvent(event: WebhookEvent): Promise<void> {
 }
 
 async function runAdminQuery(q: { kind: AdminQueryKind; range: AdminQueryRange }, text?: string): Promise<string> {
-  if (q.kind === "detail" && text) {
-    // 查特定預約/客人詳細資料（電話等）
-    const keyword = text
-      .replace(/電話|聯絡方式|的電話|聯絡|查一下|給我|查詢|請|預約者|客人|小姐|先生|資訊|資料/g, "")
-      .replace(/[，。？、\s]/g, "")
-      .trim();
-    const rows = await queryDetail(keyword || text);
+  if (q.kind === "detail") {
+    const keyword = text ? extractDetailKeyword(text) : null;
+    const rows = await queryDetail(keyword ?? "");
     if (rows.length === 0) return "找不到相符的預約或客人。";
-    const lines = rows.map((row) => {
-      const r = row as unknown as {
-        id: number; name: string; phone: string; bookingDate: Date;
-        startTime: string; endTime: string; items: unknown; people: number; notes: string | null; status: string;
-      };
-      const itemArr = Array.isArray(r.items) ? (r.items as string[]) : [];
-      return `#${r.id} ${r.name}｜${r.phone}｜${r.bookingDate.toISOString().slice(0, 10)} ${r.startTime}～${r.endTime} ${itemsLabel(itemArr)} ${r.people}人${r.notes ? "｜備註:" + r.notes : ""}`;
-    });
+    const lines = rows.map((r) => formatAdminBookingLine(r, itemsLabel));
     return `🔍 查詢結果：\n${lines.join("\n")}`;
   }
   if (q.kind === "total") {
@@ -280,16 +271,12 @@ async function runAdminQuery(q: { kind: AdminQueryKind; range: AdminQueryRange }
   if (q.kind === "top_customers") {
     const rows = await queryTopCustomers(q.range === "last_month" ? "last_month" : "month", 5);
     if (rows.length === 0) return "目前沒有足夠資料。";
-    const lines = rows.map((r, i) => `${i + 1}. ${r.lineUserId.slice(0, 12)}… ${r.count} 次`);
+    const lines = rows.map((r, i) => `${i + 1}. ${r.name}｜${r.phone}｜${r.count} 次`);
     return `🏆 常客排名：\n${lines.join("\n")}`;
   }
   const rows = await queryList(q.range === "today" ? "today" : "month", 10);
   if (rows.length === 0) return "目前沒有預約記錄。";
-  const lines = rows.map((row) => {
-    const r = row as unknown as { id: number; name: string; bookingDate: Date; startTime: string; endTime: string; items: unknown; people: number };
-    const itemArr = Array.isArray(r.items) ? (r.items as string[]) : [];
-    return `#${r.id} ${r.name} ${r.bookingDate.toISOString().slice(0, 10)} ${r.startTime}～${r.endTime} ${itemsLabel(itemArr)} ${r.people}人`;
-  });
+  const lines = rows.map((r) => formatAdminBookingLine(r, itemsLabel));
   return `📋 預約列表（${q.range === "today" ? "今天" : "本月"}）：\n${lines.join("\n")}`;
 }
 

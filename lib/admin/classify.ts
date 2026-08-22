@@ -31,7 +31,7 @@ export async function classifyAdminIntent(text: string): Promise<AdminIntent> {
         "",
         "kind 定義：",
         "- total：統計總量／數量（幾筆、幾人、生意如何）",
-        "- list：列出預約清單（有哪些、列出來、給我資訊）",
+        "- list：列出預約清單（有哪些、列出來、給我資訊）——**列表每筆須含姓名與電話**",
         "- top_customers：常客排名（誰最多、排名）",
         "- detail：查詢**特定**預約或客人的詳細資料（電話、預約內容、日期時段）——訊息中常含人名或預約編號",
         "",
@@ -71,11 +71,15 @@ export async function classifyAdminIntent(text: string): Promise<AdminIntent> {
   // 2. 規則 fallback（無 AI key 或 AI 失敗）
   const rule = parseAdminQuery(text);
   if (rule) {
-    return {
-      isAdminQuery: true,
-      kind: rule.kind,
-      range: rule.range === "today" ? "today" : "month",
-    };
+    const range: AdminQueryRange =
+      rule.kind === "detail"
+        ? "all"
+        : rule.range === "today"
+          ? "today"
+          : rule.range === "last_month"
+            ? "last_month"
+            : "month";
+    return { isAdminQuery: true, kind: rule.kind, range };
   }
   return { isAdminQuery: false, kind: "list", range: "month" };
 }
