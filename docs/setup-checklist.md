@@ -116,6 +116,19 @@ Console 沒有「Link LINE account」按鈕，路徑是：右上頭像 → 帳�
 | Healthcheck | `/api/health`（`railway.toml`） |
 | 啟動指令 | `npx prisma migrate deploy && npm start`（`railway.toml`） |
 
+### 部署流程（`web-garden`／本專案）
+
+Railway **僅**透過 GitHub 連結自動部署，**不要**用 `railway up` 上傳本機（會與 GitHub 源脫節，下次 push 可能被覆蓋）。
+
+| 步驟 | 動作 |
+|---|---|
+| 1 | 本機改碼完成、必要時更新 `docs/invariants.md` |
+| 2 | `git add` → `git commit` → `git push origin main` |
+| 3 | Railway 偵測 push 後自動 build／deploy（服務 `web-garden`） |
+| 4 | 驗證 `https://web-garden-production.up.railway.app/api/health` 回 200 |
+
+Repo：`chuwengming/garden-stroll` · 分支：`main` · Agent 被要求「部署 Railway」時**必須**走上述 push 流程。
+
 ### `web` 服務的環境變數
 
 | 變數 | 來源 | 必要性 |

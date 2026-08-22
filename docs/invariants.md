@@ -29,7 +29,7 @@
 - [x] AI 不可用時退回關鍵字啟發式，不得完全不回覆；訂購／預約與表單不受影響。
 - [x] 對話狀態以對話為單位（userId／groupId／roomId）。群組取消／改單 `flow_json` 必須含 `speakerId`；非主人不得當成選號或清掉主人流程。
 - [x] 「我的ID」只在 1:1 回傳 userId。
-- [x] 管理員查庫僅 1:1 且 userId ∈ `ADMIN_LINE_USER_IDS`；不得任意 SQL，只允許固定 Prisma 查詢工具；**列表／詳情／常客排名**輸出每筆預約須含 **姓名與電話**（`lib/admin/format.ts`）。
+- [x] 管理員查庫僅 1:1 且 userId ∈ `ADMIN_LINE_USER_IDS`；不得任意 SQL，只允許固定 Prisma 查詢工具。**整筆預約紀錄**（列表／詳情，含一筆）須以 **Flex 表單式** bubble／carousel 輸出（`lib/admin/booking-flex.ts`）；**只問單一欄位**（如電話、備註）則 **文字** 回覆即可（`lib/admin/field-query.ts`）。統計／常客排名仍為文字。
 - [x] **隱私**：預約資訊僅本人可查詢；非管理員查他人／全部預約 → 拒絕。
 - [x] **引導**：AI 於使用者表達美髮需求時主動引導預約；**clear booking** 須先禮貌確認（「您要預約是嗎？請填寫預約表單」）再附表單；若訊息含日期且為非營業日，須禮貌說明並建議可預約日。
 - [x] 「我的預約／查預約」列出本人預約；取消／更改優先於開表單。
@@ -47,6 +47,7 @@
 - [x] **本店／本服務資訊**唯一事實來源：`docs/faq.md`；`TODO` 項必須改口請專人回覆，不得臆測。
 - [x] 網路搜尋（若啟用）走 `lib/ai/responses.ts`（DeepSeek `/responses` + web_search）；**不得**回答本店價格、地址、營業時間等；失敗須退回只讀 FAQ 的 `/chat/completions`。
 - [x] Cron 清理：獨立 `cron-retention` service（cronSchedule `0 0 * * *` UTC）+ `CRON_TOKEN` 保護；勿設在長駐 web server。
+- [x] **Railway 部署**：`web-garden` 僅經 GitHub `main` push 自動部署；**禁止** `railway up` 作為正式上線手段（見 `docs/setup-checklist.md` §5）。
 
 ## 4. 資料與設定
 

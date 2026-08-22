@@ -1,0 +1,11 @@
+---
+description: Railway 部署須經 GitHub push（web-garden 自動部署），禁止 railway up
+alwaysApply: true
+---
+
+# Railway 部署（Garden_Stroll / web-garden）
+
+- 服務 `web-garden` 連結 GitHub `chuwengming/garden-stroll` 分支 `main`，**push 即自動部署**。
+- 使用者要求「部署 Railway」時：**git commit（若有未提交變更）→ git push origin main**；**勿**使用 `railway up`。
+- 詳見 `docs/setup-checklist.md` §5「部署流程」。
+- 部署後可驗證：`https://web-garden-production.up.railway.app/api/health` 回 200。

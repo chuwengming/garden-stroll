@@ -9,15 +9,13 @@ import { appendMessage, getRecentHistory } from "@/lib/chat/history";
 import { shouldCloseDialogue, isInCooldown, countsTowardDialogueRound, DIALOGUE_CLOSING_REPLY } from "@/lib/chat/policy";
 import { aiApiKey } from "@/lib/ai/env";
 import { isAdminLineUser } from "./env";
-import { classifyAdminIntent, type AdminQueryKind, type AdminQueryRange } from "@/lib/admin/classify";
+import { classifyAdminIntent } from "@/lib/admin/classify";
+import { runAdminQuery } from "@/lib/admin/run-query";
 import { parseLeaveIntent } from "@/lib/admin/leave-parse";
 import { todayInTaipei } from "@/lib/booking/validate";
 import { buildBookingInviteMessage } from "@/lib/booking/booking-invite";
 import { isAvailabilityBookingQuestion } from "@/lib/booking/availability-intent";
 import { SERVICE_LABELS } from "@/lib/booking/durations";
-import { queryTotal, queryTopCustomers, queryList, queryDetail } from "@/lib/admin/query";
-import { formatAdminBookingLine } from "@/lib/admin/format";
-import { extractDetailKeyword } from "@/lib/admin/detail-keyword";
 import { getFlow } from "@/lib/chat/flow";
 import { startFlowMessages, handleFlowReplyMessages, type FlowContext } from "@/lib/chat/amend";
 import { listOwnBookings } from "@/lib/booking/patch";
@@ -90,8 +88,8 @@ async function handleOneEvent(event: WebhookEvent): Promise<void> {
       if (event.source.type === "user" && userId && isAdminLineUser(userId)) {
         const adminIntent = await classifyAdminIntent(text);
         if (adminIntent.isAdminQuery) {
-          const report = await runAdminQuery(adminIntent, text);
-          await replyOrPush(replyToken!, userId, [textMessage(report)]);
+          const { messages } = await runAdminQuery(adminIntent, text, itemsLabel);
+          await replyOrPush(replyToken!, userId, messages);
           return;
         }
       }
@@ -253,31 +251,6 @@ async function handleOneEvent(event: WebhookEvent): Promise<void> {
     default:
       return;
   }
-}
-
-async function runAdminQuery(q: { kind: AdminQueryKind; range: AdminQueryRange }, text?: string): Promise<string> {
-  if (q.kind === "detail") {
-    const keyword = text ? extractDetailKeyword(text) : null;
-    const rows = await queryDetail(keyword ?? "");
-    if (rows.length === 0) return "找不到相符的預約或客人。";
-    const lines = rows.map((r) => formatAdminBookingLine(r, itemsLabel));
-    return `🔍 查詢結果：\n${lines.join("\n")}`;
-  }
-  if (q.kind === "total") {
-    const n = await queryTotal(q.range === "last_month" ? "last_month" : q.range === "today" ? "today" : "month");
-    const label = q.range === "last_month" ? "上月" : q.range === "today" ? "今天" : "本月";
-    return `📊 ${label}預約總量：${n} 筆（不含已取消）`;
-  }
-  if (q.kind === "top_customers") {
-    const rows = await queryTopCustomers(q.range === "last_month" ? "last_month" : "month", 5);
-    if (rows.length === 0) return "目前沒有足夠資料。";
-    const lines = rows.map((r, i) => `${i + 1}. ${r.name}｜${r.phone}｜${r.count} 次`);
-    return `🏆 常客排名：\n${lines.join("\n")}`;
-  }
-  const rows = await queryList(q.range === "today" ? "today" : "month", 10);
-  if (rows.length === 0) return "目前沒有預約記錄。";
-  const lines = rows.map((r) => formatAdminBookingLine(r, itemsLabel));
-  return `📋 預約列表（${q.range === "today" ? "今天" : "本月"}）：\n${lines.join("\n")}`;
 }
 
 // 管理員請假動作處理
