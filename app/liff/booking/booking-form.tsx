@@ -203,7 +203,7 @@ export default function BookingForm({ idToken, profileName }: BookingFormProps) 
           </div>
         </Field>
 
-        <Field label="預約日期 *（白=可約 / 灰=不可 / 綠=部分時段）">
+        <Field label="預約日期 *">
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: ".5rem" }}>
             <button type="button" onClick={prevMonth} style={navBtn}>◀</button>
             <strong>{viewMonth.y} 年 {viewMonth.m} 月</strong>
@@ -237,7 +237,7 @@ export default function BookingForm({ idToken, profileName }: BookingFormProps) 
         </Field>
 
         {form.bookingDate && (
-          <Field label="開始時段 *（灰色=已被預約/請假）">
+          <Field label="開始時段 *">
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6 }}>
               {slots.length === 0 ? (
                 <p style={{ fontSize: ".8rem", color: "#c0392b" }}>此日已無可預約時段</p>

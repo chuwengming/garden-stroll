@@ -1,17 +1,19 @@
 // lib/line/handle-events.ts — webhook 事件處理（驗簽後）
-import type { WebhookEvent } from "@line/bot-sdk";
+import type { WebhookEvent, Message } from "@line/bot-sdk";
 import { textMessage, bookingButtonFlex, welcomeMessages } from "./messages";
-import { classifyIntent } from "@/lib/ai/classify";
+import { classifyIntent, effectiveIntent } from "@/lib/ai/classify";
 import { generateReply } from "@/lib/ai/reply";
 import { keywordIntent } from "@/lib/chat/keywords";
 import { getConversation, updateConversation } from "@/lib/chat/conversation";
-import { shouldCloseSmalltalk, isInCooldown } from "@/lib/chat/policy";
+import { appendMessage, getRecentHistory } from "@/lib/chat/history";
+import { shouldCloseDialogue, isInCooldown, countsTowardDialogueRound, DIALOGUE_CLOSING_REPLY } from "@/lib/chat/policy";
 import { aiApiKey } from "@/lib/ai/env";
 import { isAdminLineUser } from "./env";
 import { classifyAdminIntent, type AdminQueryKind, type AdminQueryRange } from "@/lib/admin/classify";
 import { parseLeaveIntent } from "@/lib/admin/leave-parse";
 import { todayInTaipei } from "@/lib/booking/validate";
-import { findNextSlot, weekdayOf, type ScheduleBooking, type LeaveBlock } from "@/lib/booking/schedule";
+import { buildBookingInviteMessage } from "@/lib/booking/booking-invite";
+import { isAvailabilityBookingQuestion } from "@/lib/booking/availability-intent";
 import { SERVICE_LABELS } from "@/lib/booking/durations";
 import { queryTotal, queryTopCustomers, queryList, queryDetail } from "@/lib/admin/query";
 import { getFlow } from "@/lib/chat/flow";
@@ -136,36 +138,52 @@ async function handleOneEvent(event: WebhookEvent): Promise<void> {
       }
 
       // === 冷靜期 ===
-      const conv = await getConversation(key);
-      if (conv && isInCooldown(conv.closedAt)) {
+      const convState = await getConversation(key);
+      if (convState && isInCooldown(convState.closedAt)) {
         if (kw === "booking") {
-          await replyOrPush(replyToken!, userId, [textMessage("好的！請填寫預約表單："), bookingButtonFlex()]);
+          const msg = await buildBookingInviteMessage(text);
+          await replyOrPush(replyToken!, userId, [textMessage(msg), bookingButtonFlex()]);
         } else {
           await replyOrPush(replyToken!, userId, [
-            textMessage("感謝您的訊息！如有預約需求，請傳「預約」；其他問題可稍後再問，謝謝 🙏"),
+            textMessage("感謝您的訊息！如有預約需求，請傳「預約」；取消／更改預約仍可為您服務，謝謝 🙏"),
           ]);
         }
         return;
       }
-      // 冷靜期已過：重置閒聊計數與收尾狀態（新一輪對話）
-      if (conv?.closedAt) {
+      if (convState?.closedAt) {
         await updateConversation(key, { smalltalkCount: 0, closedAt: null });
-        conv.smalltalkCount = 0;
-        conv.closedAt = null;
       }
 
-      // === 一般流程：AI 分類 ===
-      const kwIntent = keywordIntent(text);
-      const intent = aiApiKey() ? await classifyIntent(text) : (kwIntent === "query" ? "product" : kwIntent) ?? "smalltalk";
+      // === 一般流程：AI 分類 + 多輪對話 ===
+      const history = await getRecentHistory(key);
 
-
-      if (intent === "booking") {
-        // 預約意圖：建議下一個可用時段（預設剪髮 1 小時）
-        const suggestion = await suggestNextSlot();
-        const msg = suggestion
-          ? `好的！${suggestion}。請點下方按鈕開啟預約表單：`
-          : "好的！請填寫預約表單：";
+      // 「明天有空嗎」等：優先日期檢查 + 預約表單（不走 product FAQ，避免誤答星期）
+      if (isAvailabilityBookingQuestion(text)) {
+        await appendMessage(key, "user", text);
+        const msg = await buildBookingInviteMessage(text);
         await replyOrPush(replyToken!, userId, [textMessage(msg), bookingButtonFlex()]);
+        await updateConversation(key, { smalltalkCount: 0, closedAt: null });
+        await appendMessage(key, "assistant", msg);
+        return;
+      }
+
+      const kwIntent = keywordIntent(text);
+      const classified = aiApiKey()
+        ? await classifyIntent(text, history)
+        : { intent: (kwIntent === "query" ? "product" : kwIntent) ?? "smalltalk", confidence: "clear" as const };
+      const intent = effectiveIntent(classified);
+
+      await appendMessage(key, "user", text);
+
+      const conv = (await getConversation(key)) ?? { key, smalltalkCount: 0, closedAt: null };
+      const dialogueRound = conv.smalltalkCount;
+
+      // 語意清楚 → 禮貌確認 + 日期檢查 + 預約表單
+      if (classified.intent === "booking" && classified.confidence === "clear") {
+        const msg = await buildBookingInviteMessage(text);
+        await replyOrPush(replyToken!, userId, [textMessage(msg), bookingButtonFlex()]);
+        await updateConversation(key, { smalltalkCount: 0, closedAt: null });
+        await appendMessage(key, "assistant", msg);
         return;
       }
 
@@ -173,27 +191,54 @@ async function handleOneEvent(event: WebhookEvent): Promise<void> {
         const flowCtx: FlowContext = { key, userId: userId ?? speakerId ?? "", speakerId, isGroup };
         const reply = await startFlowMessages(intent, flowCtx, text);
         await replyOrPush(replyToken!, userId, reply.messages.map((m) => textMessage(m)));
+        await updateConversation(key, { smalltalkCount: 0, closedAt: null });
         return;
       }
 
-      if (intent === "product" || intent === "smalltalk" || intent === "unknown") {
-        const count = conv?.smalltalkCount ?? 0;
-        const isSmalltalk = intent === "smalltalk";
-        if (isSmalltalk && shouldCloseSmalltalk(count + 1)) {
-          const reply = await generateReply("smalltalk", text, count + 1);
-          await replyOrPush(replyToken!, userId, [textMessage(reply)]);
-          await updateConversation(key, { smalltalkCount: count + 1, closedAt: new Date() });
-          return;
-        }
-        const reply = await generateReply(intent, text, count + (isSmalltalk ? 1 : 0));
+      // 明確諮詢：FAQ 優先（不計入 6 輪）
+      if (classified.intent === "product" && classified.confidence === "clear") {
+        const reply = await generateReply("product", text, { history, dialogueRound: 0 });
         await replyOrPush(replyToken!, userId, [textMessage(reply)]);
-        if (isSmalltalk) await updateConversation(key, { smalltalkCount: count + 1 });
+        await appendMessage(key, "assistant", reply);
         return;
       }
 
-      await replyOrPush(replyToken!, userId, [
-        textMessage("您好，我是花園漫步預約小幫手。傳「預約」開啟表單；傳「我的ID」可查詢 LINE ID。"),
-      ]);
+      // 需澄清或閒聊：計入對話輪數（一次來回 = 一輪）
+      const nextRound = countsTowardDialogueRound(intent) ? dialogueRound + 1 : dialogueRound;
+
+      if (countsTowardDialogueRound(intent) && shouldCloseDialogue(nextRound)) {
+        const reply = await generateReply(intent, text, { history, dialogueRound: nextRound });
+        const finalReply = reply.includes("其他客人") ? reply : DIALOGUE_CLOSING_REPLY;
+        await replyOrPush(replyToken!, userId, [textMessage(finalReply)]);
+        await updateConversation(key, { smalltalkCount: nextRound, closedAt: new Date() });
+        await appendMessage(key, "assistant", finalReply);
+        return;
+      }
+
+      const reply = await generateReply(intent, text, {
+        history,
+        dialogueRound: countsTowardDialogueRound(intent) ? nextRound : 0,
+      });
+
+      let finalText = reply;
+      const outbound: Message[] = [];
+      const wantsBooking =
+        intent === "unknown" &&
+        /(預約|有空|約時間|想約|想剪|想燙|想染|想洗|明天|後天|后天|週[一二三四五六日天]|星期[一二三四五六日天])/.test(text);
+
+      if (wantsBooking) {
+        finalText = await buildBookingInviteMessage(text);
+        outbound.push(textMessage(finalText), bookingButtonFlex());
+      } else {
+        outbound.push(textMessage(finalText));
+      }
+
+      await replyOrPush(replyToken!, userId, outbound);
+      await appendMessage(key, "assistant", finalText);
+
+      if (countsTowardDialogueRound(intent)) {
+        await updateConversation(key, { smalltalkCount: nextRound });
+      }
       return;
     }
 
@@ -249,45 +294,6 @@ async function runAdminQuery(q: { kind: AdminQueryKind; range: AdminQueryRange }
 }
 
 // 管理員請假動作處理
-
-
-// 建議下一個可預約時段（預設剪髮；回傳「9/12（四）10:00」或 null）
-async function suggestNextSlot(): Promise<string | null> {
-  const dbUrl = process.env.DATABASE_URL;
-  if (!dbUrl) return null;
-  try {
-    const { PrismaClient } = await import("@prisma/client");
-    const prisma = new PrismaClient();
-    const today = todayInTaipei();
-    const [bookingRows, leaveRows] = await Promise.all([
-      prisma.booking.findMany({ where: { status: { not: "cancelled" } } }),
-      prisma.designerLeave.findMany(),
-    ]);
-    await prisma.$disconnect();
-
-    const existing: ScheduleBooking[] = bookingRows.map((r) => ({
-      bookingDate: r.bookingDate.toISOString().slice(0, 10),
-      startTime: r.startTime,
-      endTime: r.endTime,
-      items: Array.isArray(r.items) ? (r.items as string[]) : [],
-      status: r.status,
-    }));
-    const leaves: LeaveBlock[] = leaveRows.map((r) => ({
-      leaveDate: r.leaveDate.toISOString().slice(0, 10),
-      startTime: r.startTime,
-      endTime: r.endTime,
-    }));
-
-    const next = findNextSlot(today, ["haircut"], existing, leaves, (d) => [2, 3, 4, 5].includes(weekdayOf(d)), 30);
-    if (!next) return null;
-    const wd = ["日", "一", "二", "三", "四", "五", "六"][weekdayOf(next.date)];
-    const [, m, d] = next.date.split("-");
-    return `${Number(m)}/${Number(d)}（${wd}）${next.slot}`;
-  } catch (err) {
-    console.error("suggestNextSlot failed:", err);
-    return null;
-  }
-}
 
 async function handleLeaveAction(lv: {
   action: "add" | "remove" | "list" | null;

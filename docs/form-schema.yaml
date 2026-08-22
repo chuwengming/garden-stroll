@@ -1,6 +1,5 @@
 # terminology: order | booking
-# Copy to docs/form-schema.yaml and edit before Phase 2.
-# Changing fields requires syncing: Prisma, validate, LIFF form, docs/faq.md, docs/invariants.md.
+# Authoritative field list — sync with Prisma, validate, LIFF, faq.md, invariants.md on any change.
 
 terminology: booking
 form_noun: "預約表單"
@@ -27,11 +26,13 @@ query_keywords:
   - 我的預約
   - 查預約
 
+# --- 表單欄位（Schedule v2：多項目 + 動態時段）---
 fields:
   - key: name
     label: 姓名
     type: text
     required: true
+    max_length: 50
   - key: phone
     label: 電話
     type: phone
@@ -41,40 +42,28 @@ fields:
     type: date
     required: true
     validation: today_or_later_taipei
-  - key: booking_slot
-    label: 時段
-    type: select
-    required: true
-    options:
-      - value: "09:00"
-        label: "上午 9:00"
-      - value: "10:00"
-        label: "上午 10:00"
-      - value: "11:00"
-        label: "上午 11:00"
-      - value: "12:00"
-        label: "上午 12:00"
-      - value: "13:00"
-        label: "下午 13:00"
-      - value: "14:00"
-        label: "下午 14:00"
-      - value: "15:00"
-        label: "下午 15:00"
-      - value: "16:00"
-        label: "下午 16:00"
-  - key: booking_item
+  - key: items
     label: 服務項目
-    type: select
+    type: multi_select
     required: true
+    min_items: 1
     options:
-      - value: haircut
-        label: 剪髮
-      - value: perm
-        label: 燙髮
-      - value: color
-        label: 染髮
       - value: shampoo
         label: 洗髮
+      - value: conditioning
+        label: 護髮
+      - value: haircut
+        label: 剪髮
+      - value: color
+        label: 染髮
+      - value: perm
+        label: 燙髮
+  - key: start_time
+    label: 開始時段
+    type: dynamic_slot
+    required: true
+    source: /api/availability
+    depends_on: [booking_date, items]
   - key: people
     label: 人數
     type: int
@@ -85,11 +74,20 @@ fields:
     label: 備註
     type: textarea
     required: false
+    max_length: 190
+
+# DB 衍生欄位（非表單直接輸入；後端依 items + start_time 計算）
+derived_fields:
+  - key: end_time
+    rule: start_time + sum(service_durations[items])
+  - key: items
+    storage: json_array
 
 create_rules:
-  - "name, phone, booking_date, booking_slot, booking_item, people 必填"
+  - "name, phone, booking_date, items（至少一項）, start_time, people 必填"
   - "預約日期不得早於今天（台北時區）"
   - "僅週二至週五可預約"
+  - "start_time 須通過排程衝突檢查（含並行容量與設計師請假）"
   - "備註選填，缺備註不得拒絕成立"
 
 available_weekdays:
@@ -98,6 +96,35 @@ available_weekdays:
   - Thu
   - Fri
 
-form_banner: "花園漫步美髮預約：僅週二～週五營業，請選擇日期與時段"
+form_banner: "花園漫步美髮預約：僅週二～週五營業；可複選服務項目，時段依所選項目動態顯示"
 
-pricing: null
+# --- 進階排程（Schedule v2；實作 lib/booking/durations.ts + schedule.ts）---
+schedule:
+  mode: duration_map_with_capacity   # 簡單 slot 選單見 skill templates/form-schema.example.yaml
+  business_start: "09:00"
+  business_end: "17:00"              # 開始 + 總工時不得晚於此時刻
+  start_slot_granularity: "1h"       # 可選開始時段：09:00～16:00 整點
+  service_durations_minutes:
+    shampoo: 40
+    conditioning: 20
+    haircut: 60
+    color: 150
+    perm: 180
+  parallel_rules:
+    heavy_services: [perm, color]    # 同時段最多 1 筆重服務
+    shampoo_like_max: 2              # 洗髮/護髮類同時段最多 2 人
+    cut_excludes_shampoo_like: true  # 剪髮時段不可並行洗髮/護髮
+  calendar_api: /api/calendar
+  availability_api: /api/availability
+  designer_leaves:
+    table: designer_leaves
+    admin_natural_language: true     # 管理員 1:1 以自然語設定/刪除/查詢
+
+pricing:
+  currency: TWD
+  services:
+    haircut: 800
+    perm: 2000
+    color: 1500
+    shampoo: 350
+    conditioning: 200

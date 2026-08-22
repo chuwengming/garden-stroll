@@ -21,15 +21,7 @@ export interface ValidationResult {
 
 const VALID_WEEKDAYS = [2, 3, 4, 5]; // Tue..Fri
 
-// 台北時區的今天日期字串 YYYY-MM-DD
-export function todayInTaipei(): string {
-  const now = new Date();
-  const taipei = new Date(now.getTime() + 8 * 3600 * 1000);
-  const y = taipei.getUTCFullYear();
-  const m = String(taipei.getUTCMonth() + 1).padStart(2, "0");
-  const d = String(taipei.getUTCDate()).padStart(2, "0");
-  return y + "-" + m + "-" + d;
-}
+import { todayInTaipei, weekdayInTaipei } from "./taipei-date";
 
 // 驗證真實曆法日期
 export function isValidCalendarDate(dateStr: string): boolean {
@@ -43,9 +35,10 @@ export function isValidCalendarDate(dateStr: string): boolean {
   return d >= 1 && d <= daysInMonth;
 }
 
+export { todayInTaipei } from "./taipei-date";
+
 export function weekdayOf(dateStr: string): number {
-  const [y, m, d] = dateStr.split("-").map(Number);
-  return new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+  return weekdayInTaipei(dateStr);
 }
 
 // 基本表單驗證（不含排程衝突）
